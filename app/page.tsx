@@ -2,74 +2,132 @@
 
 import { useState, useRef } from "react";
 
-type Status = "idle" | "reading" | "generating" | "mounting" | "done" | "error";
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+type Status =
+  | "idle"
+  | "reading"
+  | "generating"
+  | "reviewing"
+  | "adjusting"
+  | "done"
+  | "error";
 
 interface Result {
   previewUrl: string;
   fileName: string;
+  nota: number;
+  copyPaste: string;
 }
 
+// ─── Labels e progresso ───────────────────────────────────────────────────────
+
 const STATUS_LABELS: Record<Status, string> = {
-  idle: "",
-  reading: "Lendo briefing…",
-  generating: "Gerando imagem base…",
-  mounting: "Montando overlays…",
-  done: "Pronto!",
-  error: "Erro no processo",
+  idle:       "",
+  reading:    "Lendo briefing…",
+  generating: "Gerando criativo…",
+  reviewing:  "Revisando qualidade…",
+  adjusting:  "Ajustando criativo…",
+  done:       "Pronto!",
+  error:      "Erro no processo",
 };
 
 const STATUS_PROGRESS: Record<Status, number> = {
-  idle: 0,
-  reading: 25,
-  generating: 55,
-  mounting: 85,
-  done: 100,
-  error: 0,
+  idle:       0,
+  reading:    20,
+  generating: 50,
+  reviewing:  75,
+  adjusting:  60,
+  done:       100,
+  error:      0,
 };
 
+const MAX_TENTATIVAS = 3;
+
+// ─── Componente principal ─────────────────────────────────────────────────────
+
 export default function Home() {
-  const [link, setLink] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [result, setResult] = useState<Result | null>(null);
+  const [link, setLink]       = useState("");
+  const [status, setStatus]   = useState<Status>("idle");
+  const [result, setResult]   = useState<Result | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [tentativa, setTentativa] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const copyRef  = useRef<HTMLTextAreaElement>(null);
 
   const isRunning = status !== "idle" && status !== "done" && status !== "error";
+
+  // ── Pipeline principal ──────────────────────────────────────────────────────
 
   async function handleGenerate() {
     if (!link.trim() || isRunning) return;
     setResult(null);
     setErrorMsg("");
+    setTentativa(0);
 
     try {
+      // ── Agente 1: lê o briefing ──────────────────────────────────────────
       setStatus("reading");
       const briefingRes = await fetch("/api/ler-briefing", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: link.trim() }),
       });
-      if (!briefingRes.ok) throw new Error("Falha ao ler o briefing");
+      if (!briefingRes.ok) {
+        const e = await briefingRes.json().catch(() => ({}));
+        throw new Error(e.error ?? "Falha ao ler o briefing");
+      }
       const briefing = await briefingRes.json();
 
-      setStatus("generating");
-      const imageRes = await fetch("/api/gerar-imagem", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ briefing }),
-      });
-      if (!imageRes.ok) throw new Error("Falha ao gerar imagem");
-      const { imageUrl } = await imageRes.json();
+      // ── Loop Agente 2 + Agente 3 (até MAX_TENTATIVAS) ────────────────────
+      let finalImageUrl = "";
+      let fileName      = "";
+      let nota          = 0;
+      let aprovado      = false;
 
-      setStatus("mounting");
-      const mountRes = await fetch("/api/montar-criativo", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageUrl, briefing }),
-      });
-      if (!mountRes.ok) throw new Error("Falha ao montar criativo");
-      const { finalImageUrl, fileName } = await mountRes.json();
+      for (let t = 1; t <= MAX_TENTATIVAS; t++) {
+        setTentativa(t);
 
-      setResult({ previewUrl: finalImageUrl, fileName });
+        // Agente 2: monta o criativo
+        setStatus(t === 1 ? "generating" : "adjusting");
+        const montarRes = await fetch("/api/montar-criativo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ briefing, formato: "feed", estrutura: t }),
+        });
+        if (!montarRes.ok) {
+          const e = await montarRes.json().catch(() => ({}));
+          throw new Error(e.error ?? "Falha ao montar o criativo");
+        }
+        const montado = await montarRes.json();
+        finalImageUrl = montado.finalImageUrl;
+        fileName      = montado.fileName;
+
+        // Agente 3: revisa a qualidade
+        setStatus("reviewing");
+        const revisarRes = await fetch("/api/revisar-criativo", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ finalImageUrl, briefing, fileName }),
+        });
+        if (!revisarRes.ok) {
+          const e = await revisarRes.json().catch(() => ({}));
+          throw new Error(e.error ?? "Falha ao revisar o criativo");
+        }
+        const revisao = await revisarRes.json();
+        nota     = revisao.nota;
+        aprovado = revisao.aprovado;
+
+        if (aprovado) break;
+        // Se reprovado e ainda há tentativas, o loop refaz com estrutura diferente
+      }
+
+      setResult({
+        previewUrl: finalImageUrl,
+        fileName,
+        nota,
+        copyPaste: briefing.copy_paste ?? "",
+      });
       setStatus("done");
     } catch (err: unknown) {
       setErrorMsg(err instanceof Error ? err.message : "Erro desconhecido");
@@ -82,13 +140,24 @@ export default function Home() {
     setResult(null);
     setErrorMsg("");
     setLink("");
+    setTentativa(0);
     setTimeout(() => inputRef.current?.focus(), 100);
+  }
+
+  function handleCopy() {
+    if (!copyRef.current) return;
+    copyRef.current.select();
+    document.execCommand("copy");
+    copyRef.current.blur();
   }
 
   const progress = STATUS_PROGRESS[status];
 
+  // ── Render ─────────────────────────────────────────────────────────────────
+
   return (
     <main className="min-h-screen bg-[#00143D] flex flex-col items-center justify-center px-4 font-[Helvetica,Arial,sans-serif]">
+
       {/* Grain overlay */}
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.03]"
@@ -100,9 +169,11 @@ export default function Home() {
       />
 
       <div className="w-full max-w-xl relative z-10">
+
         {/* Logo */}
-        <div className="mb-12 text-center">
+        <div className="mb-10 text-center">
           <div className="flex justify-center mb-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="https://qrapd3qjiankddu3.public.blob.vercel-storage.com/logos/logo%20seazone%20full%20branca.png"
               alt="Seazone"
@@ -116,59 +187,115 @@ export default function Home() {
 
         {/* Card */}
         <div className="bg-white/[0.04] border border-white/10 rounded-2xl p-8 backdrop-blur-sm">
-          {status === "done" && result ? (
-            <div className="text-center">
-              <div className="w-12 h-12 rounded-full bg-[#FC6058]/20 flex items-center justify-center mx-auto mb-5">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FC6058" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
-              <h2 className="text-white text-lg font-semibold mb-1">Criativo gerado!</h2>
-              <p className="text-white/40 text-sm mb-6">{result.fileName}</p>
 
-              {result.previewUrl && (
-                <div className="mb-6 rounded-xl overflow-hidden border border-white/10">
-                  <img src={result.previewUrl} alt="Preview do criativo" className="w-full object-cover" />
+          {/* ── Estado: done ── */}
+          {status === "done" && result ? (
+            <div>
+              {/* Cabeçalho de sucesso */}
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-full bg-[#FC6058]/20 flex items-center justify-center flex-shrink-0">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#FC6058" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-white text-base font-semibold leading-tight">Criativo aprovado!</h2>
+                  <p className="text-white/40 text-xs mt-0.5">{result.fileName}</p>
+                </div>
+                {/* Badge de nota */}
+                <div className="ml-auto flex-shrink-0 bg-[#FC6058]/15 border border-[#FC6058]/30 rounded-lg px-3 py-1.5 text-center">
+                  <div className="text-[#FC6058] text-lg font-bold leading-none">{result.nota}</div>
+                  <div className="text-[#FC6058]/60 text-[10px] font-medium tracking-wide">/10</div>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div className="mb-5 rounded-xl overflow-hidden border border-white/10">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={result.previewUrl}
+                  alt="Preview do criativo"
+                  className="w-full object-cover"
+                />
+              </div>
+
+              {/* Botão baixar */}
+              <a
+                href={result.previewUrl}
+                download={result.fileName}
+                className="flex items-center justify-center gap-2 w-full bg-[#FC6058] hover:bg-[#e55550] text-white py-3.5 px-5 rounded-xl text-sm font-semibold transition-colors mb-4"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Baixar PNG
+              </a>
+
+              {/* Copy paste de nomenclatura */}
+              {result.copyPaste && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white/40 text-xs tracking-[0.15em] uppercase font-medium">
+                      Nomenclatura / Copy paste
+                    </span>
+                    <button
+                      onClick={handleCopy}
+                      className="text-[#6593FF] hover:text-white text-xs transition-colors flex items-center gap-1"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                        <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+                      </svg>
+                      Copiar
+                    </button>
+                  </div>
+                  <textarea
+                    ref={copyRef}
+                    readOnly
+                    value={result.copyPaste}
+                    rows={8}
+                    className="w-full bg-white/[0.04] border border-white/10 rounded-xl px-4 py-3 text-white/60 text-xs font-mono leading-relaxed resize-none outline-none select-all"
+                  />
                 </div>
               )}
 
-              <div className="flex flex-col gap-3">
-                <a
-                  href={result.previewUrl}
-                  download={result.fileName}
-                  className="flex items-center justify-center gap-2 w-full bg-[#FC6058] hover:bg-[#e55550] text-white py-3.5 px-5 rounded-xl text-sm font-semibold transition-colors"
-                >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
-                  Baixar PNG
-                </a>
-                <button onClick={handleReset} className="text-white/30 hover:text-white/60 text-sm py-2 transition-colors">
-                  Gerar outro criativo
-                </button>
-              </div>
+              {/* Gerar outro */}
+              <button
+                onClick={handleReset}
+                className="w-full text-white/30 hover:text-white/60 text-sm py-2 transition-colors"
+              >
+                Gerar outro criativo
+              </button>
             </div>
+
           ) : status === "error" ? (
+            /* ── Estado: erro ── */
             <div className="text-center">
               <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center mx-auto mb-5">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </div>
               <h2 className="text-white text-base font-semibold mb-2">Algo deu errado</h2>
-              <p className="text-red-400/80 text-sm mb-6">{errorMsg}</p>
-              <button onClick={handleReset} className="text-white/40 hover:text-white/70 text-sm transition-colors">
+              <p className="text-red-400/80 text-sm mb-6 leading-relaxed">{errorMsg}</p>
+              <button
+                onClick={handleReset}
+                className="text-white/40 hover:text-white/70 text-sm transition-colors"
+              >
                 Tentar novamente
               </button>
             </div>
+
           ) : (
+            /* ── Estado: idle / running ── */
             <>
               <label className="block text-white/50 text-xs tracking-[0.2em] uppercase font-medium mb-3">
                 Link do briefing
               </label>
+
               <div className="mb-5">
                 <input
                   ref={inputRef}
@@ -182,10 +309,18 @@ export default function Home() {
                 />
               </div>
 
+              {/* Barra de progresso */}
               {isRunning && (
                 <div className="mb-5">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-white/50 text-xs">{STATUS_LABELS[status]}</span>
+                    <span className="text-white/50 text-xs flex items-center gap-2">
+                      {STATUS_LABELS[status]}
+                      {tentativa > 1 && (
+                        <span className="text-white/25 text-[10px]">
+                          tentativa {tentativa}/{MAX_TENTATIVAS}
+                        </span>
+                      )}
+                    </span>
                     <span className="text-white/30 text-xs">{progress}%</span>
                   </div>
                   <div className="h-1 bg-white/10 rounded-full overflow-hidden">
@@ -193,6 +328,29 @@ export default function Home() {
                       className="h-full bg-gradient-to-r from-[#0055FF] to-[#FC6058] rounded-full transition-all duration-700 ease-out"
                       style={{ width: `${progress}%` }}
                     />
+                  </div>
+
+                  {/* Etapas visuais */}
+                  <div className="flex justify-between mt-3 px-0.5">
+                    {(["reading", "generating", "reviewing", "done"] as const).map((s, i) => {
+                      const stepProgress = STATUS_PROGRESS[s];
+                      const active = progress >= stepProgress;
+                      const labels = ["Briefing", "Criativo", "Revisão", "Pronto"];
+                      return (
+                        <div key={s} className="flex flex-col items-center gap-1">
+                          <div
+                            className="w-1.5 h-1.5 rounded-full transition-colors duration-300"
+                            style={{ background: active ? "#FC6058" : "rgba(255,255,255,0.15)" }}
+                          />
+                          <span
+                            className="text-[10px] transition-colors duration-300"
+                            style={{ color: active ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)" }}
+                          >
+                            {labels[i]}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
