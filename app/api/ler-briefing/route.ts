@@ -277,28 +277,37 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
         }),
       });
 
-      if (!etapa2Res.ok) {
-        const errText = await etapa2Res.text();
-        throw new Error(`Claude API etapa 2 ${etapa2Res.status}: ${errText}`);
-      }
+      const criativosFallback = [
+        { tipo: "estatico", variacao: 1, formato: "feed", copy: dadosEmpreendimento.nome, imagemContexto: "fachada", render: "render-01", hipotese: "Fachada principal" },
+        { tipo: "estatico", variacao: 1, formato: "reels", copy: dadosEmpreendimento.nome, imagemContexto: "fachada", render: "render-01", hipotese: "Fachada principal" },
+      ];
 
-      const etapa2Data = await etapa2Res.json();
-      const etapa2Text: string = etapa2Data.content?.[0]?.text ?? "";
-      console.log("ETAPA2 RAW:", etapa2Text);
-      let dadosCriativos;
       try {
-        dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        return NextResponse.json({ error: "Etapa 2 falhou: " + msg, etapa2Raw: etapa2Text });
-      }
+        if (!etapa2Res.ok) {
+          const errText = await etapa2Res.text();
+          throw new Error(`Claude API etapa 2 ${etapa2Res.status}: ${errText}`);
+        }
 
-      // ── Combinar resultados ─────────────────────────────────────────────────
-      const dadosExtraidos = { empreendimento: dadosEmpreendimento, ...dadosCriativos };
-      const nomenclatura = gerarNomenclaturas(dadosExtraidos);
-      const copy_paste = gerarCopyPaste(nomenclatura);
-      const briefing: Briefing = { ...dadosExtraidos, nomenclatura, copy_paste };
-      return NextResponse.json(briefing);
+        const etapa2Data = await etapa2Res.json();
+        const etapa2Text: string = etapa2Data.content?.[0]?.text ?? "";
+        console.log("ETAPA2 RAW:", etapa2Text);
+        const dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
+
+        // ── Combinar resultados ───────────────────────────────────────────────
+        const dadosExtraidos = { empreendimento: dadosEmpreendimento, ...dadosCriativos };
+        const nomenclatura = gerarNomenclaturas(dadosExtraidos);
+        const copy_paste = gerarCopyPaste(nomenclatura);
+        const briefing: Briefing = { ...dadosExtraidos, nomenclatura, copy_paste };
+        return NextResponse.json(briefing);
+      } catch (e) {
+        console.error("[agente-1-etapa2]", e);
+        return NextResponse.json({
+          ...dadosEmpreendimento,
+          nomenclatura: "",
+          copy_paste: "",
+          criativos: criativosFallback,
+        });
+      }
     }
 
     // 3. Sem API key e domínio não reconhecido
