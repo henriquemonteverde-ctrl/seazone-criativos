@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
 import sharp from "sharp";
+import fs from "fs";
+import path from "path";
 
 import type { Briefing } from "../ler-briefing/route";
 
@@ -79,9 +81,7 @@ async function upscaleUrl(imageUrl: string): Promise<string> {
 function buildOverlaySVG(
   briefing: Briefing,
   formato: { w: number; h: number },
-  estrutura: number,
-  fontBase64: string,
-  fontBoldBase64: string
+  estrutura: number
 ): string {
   const { w, h } = formato;
   const { empreendimento, localizacao, roi, rendimento_mensal, rendimento_anual, fase } = briefing;
@@ -113,12 +113,12 @@ function buildOverlaySVG(
   <defs><style>
     @font-face {
       font-family: 'Helvetica';
-      src: url('data:font/ttf;base64,${fontBase64}') format('truetype');
+      src: url('/tmp/Helvetica.ttf') format('truetype');
       font-weight: normal;
     }
     @font-face {
       font-family: 'Helvetica';
-      src: url('data:font/ttf;base64,${fontBoldBase64}') format('truetype');
+      src: url('/tmp/Helvetica-Bold.ttf') format('truetype');
       font-weight: bold;
     }
   </style></defs>
@@ -297,15 +297,21 @@ export async function POST(req: NextRequest) {
         .toBuffer();
     }
 
-    // 4. Carregar fontes Helvetica do Blob para embed no SVG
+    // 4. Baixar fontes Helvetica do Blob e salvar em /tmp para o librsvg
     const fontUrl     = `${BLOB}/identidade/${encodeURIComponent("Helvetica.ttf")}`;
     const fontBoldUrl = `${BLOB}/identidade/${encodeURIComponent("Helvetica-Bold.ttf")}`;
     const [fontRes, fontBoldRes] = await Promise.all([fetch(fontUrl), fetch(fontBoldUrl)]);
-    const fontBase64     = Buffer.from(await fontRes.arrayBuffer()).toString("base64");
-    const fontBoldBase64 = Buffer.from(await fontBoldRes.arrayBuffer()).toString("base64");
+    fs.writeFileSync(
+      path.join("/tmp", "Helvetica.ttf"),
+      Buffer.from(await fontRes.arrayBuffer())
+    );
+    fs.writeFileSync(
+      path.join("/tmp", "Helvetica-Bold.ttf"),
+      Buffer.from(await fontBoldRes.arrayBuffer())
+    );
 
     // 5. Construir SVG de overlays e compor imagem final
-    const svgStr    = buildOverlaySVG(briefing, dim, estrutura, fontBase64, fontBoldBase64);
+    const svgStr    = buildOverlaySVG(briefing, dim, estrutura);
     const svgBuffer = Buffer.from(svgStr);
 
     const final = await sharp(base)
