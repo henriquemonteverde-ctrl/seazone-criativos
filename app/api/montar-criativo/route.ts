@@ -113,7 +113,7 @@ function buildOverlaySVG(
   ${isLancamento ? `
   <rect x="44" y="44" width="${isFeed ? 215 : 240}" height="50" rx="6" fill="${CORAL}"/>
   <text x="${isFeed ? 151 : 164}" y="76"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial Black, sans-serif"
     font-size="${tagSize}" font-weight="800" fill="${WHITE}"
     text-anchor="middle" letter-spacing="3.5">
     LANÇAMENTO
@@ -132,7 +132,7 @@ function buildOverlaySVG(
     <ellipse cx="-195" cy="12" rx="4" ry="2" fill="${CORAL}" opacity="0.5"/>
     <!-- nome -->
     <text x="-168" y="10"
-      font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+      font-family="Arial Black, sans-serif"
       font-size="${nomeSize}" font-weight="800" fill="${WHITE}"
       letter-spacing="1.8">
       ${empreendimento.toUpperCase()}
@@ -144,7 +144,7 @@ function buildOverlaySVG(
     <rect x="-190" y="-20" width="380" height="40" rx="8"
       fill="${WHITE}" opacity="0.1"/>
     <text x="0" y="10"
-      font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+      font-family="Arial, sans-serif"
       font-size="${localSize}" fill="${WHITE}"
       text-anchor="middle" letter-spacing="1.5" opacity="0.88">
       ${localizacao.toUpperCase()}
@@ -160,7 +160,7 @@ function buildOverlaySVG(
 
   <!-- ── ROI PRINCIPAL ── -->
   <text x="${w / 2}" y="${barraY + (isFeed ? 88 : 100)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial Black, sans-serif"
     font-size="${roiSize}" font-weight="900" fill="${WHITE}"
     text-anchor="middle" letter-spacing="-2">
     ${roi} ao ano
@@ -168,7 +168,7 @@ function buildOverlaySVG(
 
   <!-- ── LABEL "RETORNO ESTIMADO" ── -->
   <text x="${w / 2}" y="${barraY + (isFeed ? 120 : 136)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial Black, sans-serif"
     font-size="${labelSize}" font-weight="600" fill="${CORAL}"
     text-anchor="middle" letter-spacing="5">
     RETORNO ESTIMADO
@@ -181,13 +181,13 @@ function buildOverlaySVG(
 
   <!-- ── RENDIMENTO MENSAL (esquerda) ── -->
   <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial Black, sans-serif"
     font-size="${valorSize}" font-weight="700" fill="${WHITE}"
     text-anchor="middle">
     ${rendimento_mensal}
   </text>
   <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial, sans-serif"
     font-size="13" fill="${WHITE}"
     text-anchor="middle" opacity="0.45" letter-spacing="2">
     POR MÊS
@@ -200,13 +200,13 @@ function buildOverlaySVG(
 
   <!-- ── RENDIMENTO ANUAL (direita) ── -->
   <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial Black, sans-serif"
     font-size="${valorSize}" font-weight="700" fill="${WHITE}"
     text-anchor="middle">
     ${rendimento_anual}
   </text>
   <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial, sans-serif"
     font-size="13" fill="${WHITE}"
     text-anchor="middle" opacity="0.45" letter-spacing="2">
     POR ANO
@@ -214,7 +214,7 @@ function buildOverlaySVG(
 
   <!-- ── DISCLAIMER ── -->
   <text x="${w / 2}" y="${barraY + (isFeed ? 242 : 278)}"
-    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-family="Arial, sans-serif"
     font-size="12" fill="${WHITE}"
     text-anchor="middle" opacity="0.3">
     *Valores estimados. Rentabilidade não é garantida.
