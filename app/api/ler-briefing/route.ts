@@ -172,7 +172,7 @@ ${html.slice(0, 6000)}`;
         method: "POST",
         headers: openRouterHeaders,
         body: JSON.stringify({
-          model: "meta-llama/llama-3.1-8b-instruct:free",
+          model: "mistralai/mistral-7b-instruct:free",
           messages: [{ role: "user", content: etapa1Prompt }],
           max_tokens: 8000,
         }),
@@ -223,7 +223,7 @@ Gere o array de criativos.`;
         method: "POST",
         headers: openRouterHeaders,
         body: JSON.stringify({
-          model: "meta-llama/llama-3.1-8b-instruct:free",
+          model: "mistralai/mistral-7b-instruct:free",
           messages: [{ role: "user", content: etapa2Prompt }],
           max_tokens: 8000,
         }),

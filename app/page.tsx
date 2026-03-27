@@ -413,6 +413,12 @@ export default function Home() {
           to   { opacity: 1; transform: translateY(0); }
         }
         @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes espiar {
+          0%   { right: -300px; }
+          70%  { right: -70px; }
+          85%  { right: -90px; }
+          100% { right: -80px; }
+        }
 
         * { box-sizing: border-box; margin: 0; padding: 0; }
         ::-webkit-scrollbar { width: 4px; }
@@ -573,11 +579,13 @@ export default function Home() {
         style={{
           position: "fixed",
           bottom: "0px",
-          right: "-60px",
-          width: 220,
+          right: escondido ? "-300px" : "-80px",
+          width: 300,
           zIndex: 50,
           cursor: "pointer",
           filter: "drop-shadow(-4px 0px 12px rgba(0,0,0,0.5))",
+          transition: escondido ? "right 0.15s cubic-bezier(0.4, 0, 1, 1)" : "right 0.6s cubic-bezier(0, 0, 0.2, 1)",
+          animation: escondido ? "none" : "espiar 4s ease-in-out 1s forwards",
         }}
       />
     </>
