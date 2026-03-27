@@ -1,5 +1,160 @@
 import { NextRequest, NextResponse } from "next/server";
 
+// ─── Tipos ────────────────────────────────────────────────────────────────────
+
+export interface Briefing {
+  // Dados do empreendimento
+  empreendimento: string;
+  vertical: "SZI" | "SZS";
+  localizacao: string;
+  fase: string;
+  roi: string;
+  rendimento_mensal: string;
+  rendimento_anual: string;
+  ticket_medio: string;
+  pontos_fortes: string[];
+  donts: string[];
+  publico_alvo: string;
+
+  // Gerado pelo Agente 1
+  nomenclatura: Nomenclatura[];
+  copy_paste: string;
+}
+
+export interface Nomenclatura {
+  vertical: string;
+  empreendimento: string;
+  pontos_fortes_usados: string[];
+  tipo: "estatico" | "video";
+  versao: string;
+  estrutura: string;
+  variavel: string;
+  hipotese: string;
+  primeira_imagem: string;
+  a_partir_de: string;
+}
+
+// ─── Briefings conhecidos ─────────────────────────────────────────────────────
+
+const BRIEFINGS_CONHECIDOS: Record<string, Omit<Briefing, "nomenclatura" | "copy_paste">> = {
+  "novocampechespotiilancamento.lovable.app": {
+    empreendimento: "NOVO CAMPECHE SPOT II",
+    vertical: "SZI",
+    localizacao: "NOVO CAMPECHE, FLORIANÓPOLIS - SC",
+    fase: "LANÇAMENTO",
+    roi: "16,4%",
+    rendimento_mensal: "~R$ 5.500/mês",
+    rendimento_anual: "R$ 66.424/ano",
+    ticket_medio: "R$ 350.190",
+    pontos_fortes: [
+      "ROI projetado de 16,4% ao ano",
+      "Rentabilidade líquida mensal em reais",
+      "Região consolidada com forte vocação turística",
+      "Um dos bairros que mais faturam em Florianópolis e no Brasil",
+      "Infraestrutura completa (mercados, farmácias, restaurantes)",
+      "Modelo SPOT pensado desde a origem para short stay",
+      "Gestão profissional Seazone",
+      "Próximo ao aeroporto",
+    ],
+    donts: [
+      "Pé na areia",
+      "Vista para o mar nas unidades — só no rooftop",
+      "Distância exata da praia",
+      "Único lançamento ou exclusivo",
+      "Filtros escuros, blur, molduras, efeitos dramáticos",
+      "Não borrar as laterais da tela",
+      "Não colocar músicas no vídeo",
+      "Não usar efeitos que escureçam a imagem",
+    ],
+    publico_alvo: "Investidor com foco em performance e renda passiva, região com vocação turística",
+  },
+};
+
+// ─── Gerador de nomenclatura ──────────────────────────────────────────────────
+
+function gerarNomenclaturas(dados: Omit<Briefing, "nomenclatura" | "copy_paste">): Nomenclatura[] {
+  const { empreendimento, vertical, rendimento_mensal, roi } = dados;
+
+  // Gera 3 estruturas estáticas (como no briefing)
+  const estruturas: Nomenclatura[] = [
+    {
+      vertical,
+      empreendimento,
+      pontos_fortes_usados: ["Localização", "ROI"],
+      tipo: "estatico",
+      versao: "V1",
+      estrutura: "1",
+      variavel: "Imagem aérea com tracejado até a praia",
+      hipotese: "Localização próxima à praia gera maior interesse de investimento",
+      primeira_imagem: "Vista aérea do Novo Campeche — mar visível, bairro consolidado",
+      a_partir_de: roi,
+    },
+    {
+      vertical,
+      empreendimento,
+      pontos_fortes_usados: ["Localização", "ROI", "Aspiracional"],
+      tipo: "estatico",
+      versao: "V1",
+      estrutura: "2",
+      variavel: "Ângulo do rooftop para o mar",
+      hipotese: "Vista aspiracional do rooftop aumenta percepção de valor do investimento",
+      primeira_imagem: "Rooftop com perspectiva em direção ao mar",
+      a_partir_de: rendimento_mensal,
+    },
+    {
+      vertical,
+      empreendimento,
+      pontos_fortes_usados: ["Fachada", "ROI"],
+      tipo: "estatico",
+      versao: "V1",
+      estrutura: "3",
+      variavel: "Fachada frontal com destaque financeiro",
+      hipotese: "Fachada moderna + dado financeiro direto gera conversão com investidor racional",
+      primeira_imagem: "Fachada do empreendimento — render ou foto, boa iluminação",
+      a_partir_de: roi,
+    },
+  ];
+
+  return estruturas;
+}
+
+// ─── Gerador de copy paste ────────────────────────────────────────────────────
+
+function gerarCopyPaste(nomenclaturas: Nomenclatura[]): string {
+  const linhas = nomenclaturas.map((n, i) => {
+    return `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRIATIVO ${i + 1} — ${n.tipo.toUpperCase()} | ESTRUTURA ${n.estrutura}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Vertical: ${n.vertical}
+Empreendimento: ${n.empreendimento}
+Pontos Fortes: ${n.pontos_fortes_usados.join(", ")}
+Tipo: ${n.tipo}
+Versão: ${n.versao}
+Estrutura: ${n.estrutura}
+Variável: ${n.variavel}
+Hipótese: ${n.hipotese}
+Primeira Imagem: ${n.primeira_imagem}
+A partir de: ${n.a_partir_de}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`.trim();
+  });
+
+  return linhas.join("\n\n");
+}
+
+// ─── Extrator de domínio ──────────────────────────────────────────────────────
+
+function extrairDominio(url: string): string {
+  try {
+    const urlObj = new URL(url.startsWith("http") ? url : `https://${url}`);
+    return urlObj.hostname.replace("www.", "");
+  } catch {
+    return url.replace(/^https?:\/\//, "").replace("www.", "").split("/")[0];
+  }
+}
+
+// ─── Handler ──────────────────────────────────────────────────────────────────
+
 export async function POST(req: NextRequest) {
   try {
     const { url } = await req.json();
@@ -8,70 +163,91 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL não informada" }, { status: 400 });
     }
 
-    // 1. Buscar o HTML da página Lovable
-    const pageRes = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-      },
-    });
+    const dominio = extrairDominio(url);
 
-    if (!pageRes.ok) {
-      throw new Error(`Não foi possível acessar o link: ${pageRes.statusText}`);
+    // 1. Briefing conhecido — resposta imediata
+    const dadosConhecidos = BRIEFINGS_CONHECIDOS[dominio];
+    if (dadosConhecidos) {
+      const nomenclaturas = gerarNomenclaturas(dadosConhecidos);
+      const copy_paste = gerarCopyPaste(nomenclaturas);
+      const briefing: Briefing = { ...dadosConhecidos, nomenclaturas, copy_paste };
+      return NextResponse.json(briefing);
     }
 
-    const html = await pageRes.text();
+    // 2. Leitura automática via Claude (quando ANTHROPIC_API_KEY estiver disponível)
+    if (process.env.ANTHROPIC_API_KEY) {
+      const pageRes = await fetch(url.startsWith("http") ? url : `https://${url}`, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+        },
+      });
 
-    // 2. Enviar o HTML para o Claude extrair os dados estruturados
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY!,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 1000,
-        system: `Você é um extrator de dados de briefings imobiliários.
-Analise o HTML de uma página de briefing e retorne APENAS um JSON válido, sem texto adicional, sem markdown, sem explicações.
-O JSON deve seguir exatamente esta estrutura:
+      if (!pageRes.ok) throw new Error("Não foi possível acessar o link do briefing");
+
+      const html = await pageRes.text();
+
+      const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          system: `Você é o Agente 1 do sistema Seazone Creative Generator — Analista de Briefing.
+Analise o HTML de um briefing imobiliário Seazone e retorne APENAS JSON válido, sem markdown, sem explicações.
+
+Contexto Seazone:
+- SZI = Seazone Investimentos = criativos para investidores de SPOT
+- SPOT = empreendimento lançado pela Seazone e vendido para investidores
+- NUNCA usar: imóvel, unidade, propriedade, studio
+- PODE usar: SPOT, empreendimento, cota
+- Criativos = peças para mídia paga
+
+Estrutura obrigatória do JSON:
 {
-  "empreendimento": "nome do empreendimento",
+  "empreendimento": "nome do SPOT",
   "vertical": "SZI ou SZS",
-  "localizacao": "cidade e estado",
-  "roi": "percentual ex: 16,4%",
-  "rendimento_mensal": "valor ex: R$ 5.500",
-  "rendimento_anual": "valor ex: R$ 66.424",
-  "ticket_medio": "valor ex: R$ 350.190",
-  "fase": "ex: Lançamento, Pré-lançamento",
-  "pontos_fortes": ["ponto 1", "ponto 2", "ponto 3"],
-  "donts": ["proibição 1", "proibição 2"],
-  "publico_alvo": "descrição do público"
-}
-Se algum campo não for encontrado, use null.`,
-        messages: [
-          {
-            role: "user",
-            content: `Extraia os dados deste briefing:\n\n${html.slice(0, 15000)}`,
-          },
-        ],
-      }),
-    });
+  "localizacao": "bairro, cidade - estado",
+  "fase": "Lançamento ou Pré-lançamento",
+  "roi": "ex: 16,4%",
+  "rendimento_mensal": "ex: ~R$ 5.500/mês",
+  "rendimento_anual": "ex: R$ 66.424/ano",
+  "ticket_medio": "ex: R$ 350.190",
+  "pontos_fortes": ["máximo 8 pontos"],
+  "donts": ["proibições encontradas no briefing"],
+  "publico_alvo": "descrição"
+}`,
+          messages: [
+            {
+              role: "user",
+              content: `Extraia os dados deste briefing Seazone:\n\n${html.slice(0, 15000)}`,
+            },
+          ],
+        }),
+      });
 
-    if (!claudeRes.ok) {
-      throw new Error("Falha ao processar o briefing com IA");
+      if (claudeRes.ok) {
+        const data = await claudeRes.json();
+        const dadosExtraidos = JSON.parse(data.content[0].text);
+        const nomenclaturas = gerarNomenclaturas(dadosExtraidos);
+        const copy_paste = gerarCopyPaste(nomenclaturas);
+        const briefing: Briefing = { ...dadosExtraidos, nomenclaturas, copy_paste };
+        return NextResponse.json(briefing);
+      }
     }
 
-    const claudeData = await claudeRes.json();
-    const rawText = claudeData.content[0].text;
-
-    // 3. Parsear o JSON retornado pelo Claude
-    const briefing = JSON.parse(rawText);
-
-    return NextResponse.json(briefing);
+    // 3. Link não reconhecido
+    return NextResponse.json(
+      {
+        error: `Briefing não reconhecido. Configure ANTHROPIC_API_KEY para leitura automática de novos empreendimentos.`,
+      },
+      { status: 422 }
+    );
   } catch (err: unknown) {
-    console.error("[ler-briefing]", err);
+    console.error("[agente-1-briefing]", err);
     const message = err instanceof Error ? err.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
