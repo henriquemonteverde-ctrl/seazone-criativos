@@ -168,9 +168,9 @@ export async function POST(req: NextRequest) {
     // 1. Briefing conhecido — resposta imediata
     const dadosConhecidos = BRIEFINGS_CONHECIDOS[dominio];
     if (dadosConhecidos) {
-      const nomenclaturas = gerarNomenclaturas(dadosConhecidos);
-      const copy_paste = gerarCopyPaste(nomenclaturas);
-      const briefing: Briefing = { ...dadosConhecidos, nomenclaturas, copy_paste };
+      const nomenclatura = gerarNomenclaturas(dadosConhecidos);
+      const copy_paste = gerarCopyPaste(nomenclatura);
+      const briefing: Briefing = { ...dadosConhecidos, nomenclatura, copy_paste };
       return NextResponse.json(briefing);
     }
 
@@ -232,9 +232,9 @@ Estrutura obrigatória do JSON:
       if (claudeRes.ok) {
         const data = await claudeRes.json();
         const dadosExtraidos = JSON.parse(data.content[0].text);
-        const nomenclaturas = gerarNomenclaturas(dadosExtraidos);
-        const copy_paste = gerarCopyPaste(nomenclaturas);
-        const briefing: Briefing = { ...dadosExtraidos, nomenclaturas, copy_paste };
+        const nomenclatura = gerarNomenclaturas(dadosExtraidos);
+        const copy_paste = gerarCopyPaste(nomenclatura);
+        const briefing: Briefing = { ...dadosExtraidos, nomenclatura, copy_paste };
         return NextResponse.json(briefing);
       }
     }

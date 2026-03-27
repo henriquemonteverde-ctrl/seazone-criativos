@@ -1,164 +1,282 @@
 import { NextRequest, NextResponse } from "next/server";
 import sharp from "sharp";
 
-// ─── Cores Seazone ────────────────────────────────────────────────────────────
-const CORAL  = "#FC6058";
-const NAVY   = "#00143D";
-const WHITE  = "#FFFFFF";
+import type { Briefing } from "../ler-briefing/route";
 
-// ─── Dimensões do feed 4:5 ───────────────────────────────────────────────────
-const W = 1080;
-const H = 1350;
+// ─── Cores brandbook Seazone ──────────────────────────────────────────────────
 
-export async function POST(req: NextRequest) {
-  try {
-    const { imageUrl, briefing } = await req.json();
+const CORAL = "#FC6058";
+const NAVY  = "#00143D";
+const WHITE = "#FFFFFF";
 
-    if (!imageUrl) {
-      return NextResponse.json({ error: "imageUrl não informada" }, { status: 400 });
-    }
+// ─── Assets via Vercel Blob ───────────────────────────────────────────────────
 
-    // 1. Baixar a imagem gerada
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) throw new Error("Falha ao baixar a imagem base");
-    const imgBuffer = Buffer.from(await imgRes.arrayBuffer());
+const BLOB = "https://qrapd3qjiankddu3.public.blob.vercel-storage.com";
 
-    // 2. Redimensionar para 1080x1350
-    const base = await sharp(imgBuffer)
-      .resize(W, H, { fit: "cover", position: "centre" })
-      .toBuffer();
+const ASSETS = {
+  logoSeazone: `${BLOB}/logos/logo%20seazone%20full%20branca.png`,
+  renders: {
+    "NOVO CAMPECHE SPOT II": [
+      `${BLOB}/empreendimentos/novo-campeche-ii/renders/render-1.jpg`,
+      `${BLOB}/empreendimentos/novo-campeche-ii/renders/render-2.jpg`,
+      `${BLOB}/empreendimentos/novo-campeche-ii/renders/render-3.jpg`,
+    ],
+  } as Record<string, string[]>,
+};
 
-    // ─── Dados do briefing (com fallbacks) ────────────────────────────────
-    const nome       = briefing?.empreendimento ?? "NOVO CAMPECHE SPOT II";
-    const local      = briefing?.localizacao    ?? "NOVO CAMPECHE, FLORIANÓPOLIS - SC";
-    const roi        = briefing?.roi            ?? "16,4%";
-    const mensal     = briefing?.rendimento_mensal ?? "~R$ 5.500/mês";
-    const anual      = briefing?.rendimento_anual  ?? "R$ 66.424/ano";
-    const fase       = briefing?.fase           ?? "LANÇAMENTO";
-    const isLancamento = fase?.toUpperCase().includes("LANÇA");
+// ─── Formatos de saída ────────────────────────────────────────────────────────
 
-    // ─── SVG dos overlays ─────────────────────────────────────────────────
-    const svg = `
-<svg width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <style>
-      @font-face { font-family: 'Helvetica'; }
-    </style>
-  </defs>
+const FORMATOS = {
+  feed:  { w: 1080, h: 1350 },
+  reels: { w: 1080, h: 1920 },
+};
 
-  <!-- TAG LANÇAMENTO (topo esquerdo) -->
+// ─── Utilitário: fetch → Buffer ───────────────────────────────────────────────
+
+async function fetchBuffer(url: string): Promise<Buffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Erro ao buscar asset: ${url}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+// ─── SVG de overlays ─────────────────────────────────────────────────────────
+
+function buildOverlaySVG(
+  briefing: Briefing,
+  formato: { w: number; h: number },
+  estrutura: number
+): string {
+  const { w, h } = formato;
+  const { empreendimento, localizacao, roi, rendimento_mensal, rendimento_anual, fase } = briefing;
+
+  const isLancamento = fase?.toUpperCase().includes("LANÇA");
+  const isFeed = h === 1350;
+
+  // Tipografia responsiva por formato
+  const roiSize   = isFeed ? 72 : 82;
+  const labelSize = isFeed ? 20 : 23;
+  const valorSize = isFeed ? 28 : 32;
+  const nomeSize  = isFeed ? 22 : 26;
+  const localSize = isFeed ? 15 : 18;
+  const tagSize   = isFeed ? 18 : 20;
+  const barraH    = isFeed ? 280 : 320;
+  const barraY    = h - barraH;
+
+  // Tracejado só na estrutura 1 (aérea, indica acesso à praia)
+  const tracejado =
+    estrutura === 1
+      ? `<line x1="${w * 0.35}" y1="${h * 0.55}" x2="${w * 0.65}" y2="${h * 0.28}"
+           stroke="${CORAL}" stroke-width="2.5" stroke-dasharray="10,7" opacity="0.9"/>
+         <circle cx="${w * 0.65}" cy="${h * 0.28}" r="10" fill="${CORAL}" opacity="0.9"/>
+         <circle cx="${w * 0.65}" cy="${h * 0.28}" r="20" fill="${CORAL}" opacity="0.2"/>`
+      : "";
+
+  return `
+<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+
+  <!-- ── TAG LANÇAMENTO (topo esquerdo) ── -->
   ${isLancamento ? `
-  <rect x="40" y="40" width="200" height="44" rx="6" fill="${CORAL}"/>
-  <text x="140" y="68" font-family="Helvetica,Arial,sans-serif" font-size="18"
-        font-weight="700" fill="${WHITE}" text-anchor="middle" letter-spacing="3">
+  <rect x="44" y="44" width="${isFeed ? 215 : 240}" height="50" rx="6" fill="${CORAL}"/>
+  <text x="${isFeed ? 151 : 164}" y="76"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="${tagSize}" font-weight="800" fill="${WHITE}"
+    text-anchor="middle" letter-spacing="3.5">
     LANÇAMENTO
   </text>` : ""}
 
-  <!-- PIN CORAL + NOME (centro superior) -->
-  <g transform="translate(${W / 2}, 220)">
-    <!-- Sombra suave -->
-    <rect x="-190" y="-22" width="380" height="52" rx="10"
-          fill="${NAVY}" opacity="0.55"/>
-    <!-- Ícone de pin -->
-    <text x="-160" y="17" font-family="Helvetica,Arial,sans-serif"
-          font-size="26" fill="${CORAL}">⬟</text>
-    <!-- Nome do empreendimento -->
-    <text x="-125" y="17" font-family="Helvetica,Arial,sans-serif"
-          font-size="20" font-weight="700" fill="${WHITE}" letter-spacing="1.5">
-      ${nome.toUpperCase()}
+  <!-- ── TRACEJADO ATÉ A PRAIA (estrutura 1) ── -->
+  ${tracejado}
+
+  <!-- ── PIN + NOME DO EMPREENDIMENTO ── -->
+  <g transform="translate(${w / 2}, ${h * 0.2})">
+    <rect x="-230" y="-34" width="460" height="68" rx="12"
+      fill="${NAVY}" opacity="0.72"/>
+    <!-- pin coral -->
+    <circle cx="-195" cy="-2" r="13" fill="${CORAL}"/>
+    <circle cx="-195" cy="-6" r="6" fill="${WHITE}" opacity="0.9"/>
+    <ellipse cx="-195" cy="12" rx="4" ry="2" fill="${CORAL}" opacity="0.5"/>
+    <!-- nome -->
+    <text x="-168" y="10"
+      font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+      font-size="${nomeSize}" font-weight="800" fill="${WHITE}"
+      letter-spacing="1.8">
+      ${empreendimento.toUpperCase()}
     </text>
   </g>
 
-  <!-- TAG LOCALIZAÇÃO -->
-  <g transform="translate(${W / 2}, 290)">
-    <rect x="-175" y="-18" width="350" height="34" rx="6"
-          fill="${WHITE}" opacity="0.12"/>
-    <text x="0" y="8" font-family="Helvetica,Arial,sans-serif"
-          font-size="15" fill="${WHITE}" text-anchor="middle"
-          letter-spacing="1" opacity="0.9">
-      ${local.toUpperCase()}
+  <!-- ── LOCALIZAÇÃO ── -->
+  <g transform="translate(${w / 2}, ${h * 0.2 + 56})">
+    <rect x="-190" y="-20" width="380" height="40" rx="8"
+      fill="${WHITE}" opacity="0.1"/>
+    <text x="0" y="10"
+      font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+      font-size="${localSize}" fill="${WHITE}"
+      text-anchor="middle" letter-spacing="1.5" opacity="0.88">
+      ${localizacao.toUpperCase()}
     </text>
   </g>
 
-  <!-- BARRA NAVY INFERIOR -->
-  <rect x="0" y="${H - 220}" width="${W}" height="220" fill="${NAVY}"/>
+  <!-- ── BARRA NAVY INFERIOR ── -->
+  <rect x="0" y="${barraY}" width="${w}" height="${barraH}" fill="${NAVY}"/>
+  <!-- linha coral decorativa no topo da barra -->
+  <rect x="0" y="${barraY}" width="${w}" height="4" fill="${CORAL}"/>
+  <!-- bloco coral lateral esquerdo -->
+  <rect x="0" y="${barraY}" width="8" height="${barraH}" fill="${CORAL}"/>
 
-  <!-- Linha coral decorativa no topo da barra -->
-  <rect x="0" y="${H - 220}" width="${W}" height="3" fill="${CORAL}"/>
-
-  <!-- ROI — destaque principal -->
-  <text x="${W / 2}" y="${H - 162}" font-family="Helvetica,Arial,sans-serif"
-        font-size="52" font-weight="700" fill="${WHITE}" text-anchor="middle"
-        letter-spacing="-1">
+  <!-- ── ROI PRINCIPAL ── -->
+  <text x="${w / 2}" y="${barraY + (isFeed ? 88 : 100)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="${roiSize}" font-weight="900" fill="${WHITE}"
+    text-anchor="middle" letter-spacing="-2">
     ${roi} ao ano
   </text>
-  <text x="${W / 2}" y="${H - 120}" font-family="Helvetica,Arial,sans-serif"
-        font-size="18" fill="${CORAL}" text-anchor="middle" letter-spacing="4"
-        font-weight="500">
+
+  <!-- ── LABEL "RETORNO ESTIMADO" ── -->
+  <text x="${w / 2}" y="${barraY + (isFeed ? 120 : 136)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="${labelSize}" font-weight="600" fill="${CORAL}"
+    text-anchor="middle" letter-spacing="5">
     RETORNO ESTIMADO
   </text>
 
-  <!-- Divisor -->
-  <line x1="120" y1="${H - 96}" x2="${W - 120}" y2="${H - 96}"
-        stroke="${WHITE}" stroke-width="1" opacity="0.15"/>
+  <!-- ── DIVISOR HORIZONTAL ── -->
+  <line x1="80" y1="${barraY + (isFeed ? 142 : 162)}"
+        x2="${w - 80}" y2="${barraY + (isFeed ? 142 : 162)}"
+    stroke="${WHITE}" stroke-width="1" opacity="0.12"/>
 
-  <!-- Rendimento mensal e anual -->
-  <text x="${W / 2 - 140}" y="${H - 66}" font-family="Helvetica,Arial,sans-serif"
-        font-size="22" font-weight="700" fill="${WHITE}" text-anchor="middle">
-    ${mensal}
+  <!-- ── RENDIMENTO MENSAL (esquerda) ── -->
+  <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="${valorSize}" font-weight="700" fill="${WHITE}"
+    text-anchor="middle">
+    ${rendimento_mensal}
   </text>
-  <text x="${W / 2 - 140}" y="${H - 44}" font-family="Helvetica,Arial,sans-serif"
-        font-size="13" fill="${WHITE}" text-anchor="middle" opacity="0.5"
-        letter-spacing="1">
+  <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="13" fill="${WHITE}"
+    text-anchor="middle" opacity="0.45" letter-spacing="2">
     POR MÊS
   </text>
 
-  <!-- Divisor vertical -->
-  <line x1="${W / 2}" y1="${H - 85}" x2="${W / 2}" y2="${H - 36}"
-        stroke="${WHITE}" stroke-width="1" opacity="0.15"/>
+  <!-- ── DIVISOR VERTICAL ── -->
+  <line x1="${w / 2}" y1="${barraY + (isFeed ? 152 : 172)}"
+        x2="${w / 2}" y2="${barraY + (isFeed ? 224 : 256)}"
+    stroke="${WHITE}" stroke-width="1" opacity="0.12"/>
 
-  <text x="${W / 2 + 140}" y="${H - 66}" font-family="Helvetica,Arial,sans-serif"
-        font-size="22" font-weight="700" fill="${WHITE}" text-anchor="middle">
-    ${anual}
+  <!-- ── RENDIMENTO ANUAL (direita) ── -->
+  <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="${valorSize}" font-weight="700" fill="${WHITE}"
+    text-anchor="middle">
+    ${rendimento_anual}
   </text>
-  <text x="${W / 2 + 140}" y="${H - 44}" font-family="Helvetica,Arial,sans-serif"
-        font-size="13" fill="${WHITE}" text-anchor="middle" opacity="0.5"
-        letter-spacing="1">
+  <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="13" fill="${WHITE}"
+    text-anchor="middle" opacity="0.45" letter-spacing="2">
     POR ANO
   </text>
 
-  <!-- Logo Seazone (ícone casinha + texto) -->
-  <g transform="translate(${W / 2 - 72}, ${H - 30})">
-    <!-- Casinha coral -->
-    <polygon points="14,2 0,10 3,10 3,19 10,19 10,14 18,14 18,19 25,19 25,10 28,10"
-             fill="${CORAL}" transform="scale(0.7)"/>
-    <text x="22" y="14" font-family="Helvetica,Arial,sans-serif"
-          font-size="14" font-weight="700" fill="${WHITE}" letter-spacing="2"
-          opacity="0.85">
-      SEAZONE
-    </text>
-  </g>
-</svg>`;
+  <!-- ── DISCLAIMER ── -->
+  <text x="${w / 2}" y="${barraY + (isFeed ? 242 : 278)}"
+    font-family="Helvetica Neue,Helvetica,Arial,sans-serif"
+    font-size="12" fill="${WHITE}"
+    text-anchor="middle" opacity="0.3">
+    *Valores estimados. Rentabilidade não é garantida.
+  </text>
 
-    // 3. Compor a imagem base com o SVG de overlays
-    const svgBuffer = Buffer.from(svg);
+  <!-- ── LOGO SEAZONE VIA BLOB ── -->
+  <image
+    href="${ASSETS.logoSeazone}"
+    x="${w / 2 - 65}" y="${barraY + barraH - 54}"
+    width="130" height="32"
+    preserveAspectRatio="xMidYMid meet"
+    opacity="0.88"/>
 
-    const final = await sharp(base)
+</svg>`.trim();
+}
+
+// ─── Handler principal ────────────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
+  try {
+    const { briefing, formato = "feed", estrutura = 1 } = (await req.json()) as {
+      briefing: Briefing;
+      formato: "feed" | "reels";
+      estrutura: 1 | 2 | 3;
+    };
+
+    if (!briefing) {
+      return NextResponse.json({ error: "Briefing não informado" }, { status: 400 });
+    }
+
+    const dim = FORMATOS[formato];
+
+    // 1. Escolher imagem base — render do Blob ou fallback sólido
+    const renders = ASSETS.renders[briefing.empreendimento];
+    let imagemUrl: string | null = null;
+
+    if (renders && renders.length > 0) {
+      const idx = Math.min(estrutura - 1, renders.length - 1);
+      imagemUrl = renders[idx];
+    }
+
+    let base: Buffer;
+
+    if (imagemUrl) {
+      try {
+        const imgBuffer = await fetchBuffer(imagemUrl);
+        base = await sharp(imgBuffer)
+          .resize(dim.w, dim.h, { fit: "cover", position: "centre" })
+          .toBuffer();
+      } catch {
+        // Render inacessível — usa fundo navy
+        imagemUrl = null;
+      }
+    }
+
+    if (!imagemUrl) {
+      base = await sharp({
+        create: {
+          width: dim.w,
+          height: dim.h,
+          channels: 3,
+          background: { r: 0, g: 20, b: 61 },
+        },
+      })
+        .png()
+        .toBuffer();
+    }
+
+    // 2. Construir SVG de overlays
+    const svgStr = buildOverlaySVG(briefing, dim, estrutura);
+    const svgBuffer = Buffer.from(svgStr);
+
+    // 3. Compor imagem final
+    const final = await sharp(base!)
       .composite([{ input: svgBuffer, top: 0, left: 0 }])
       .png()
       .toBuffer();
 
-    // 4. Retornar como base64 para o frontend baixar
-    const base64 = final.toString("base64");
-    const dataUrl = `data:image/png;base64,${base64}`;
+    // 4. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
+    const slug = briefing.empreendimento
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+    const fileName = `SZI_${slug}_${formato}_V1_E${estrutura}_${Date.now()}.png`;
 
-    // Nome do arquivo: empreendimento + timestamp
-    const slug = nome.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
-    const fileName = `${slug}-${Date.now()}.png`;
+    // 5. Retornar base64
+    const dataUrl = `data:image/png;base64,${final.toString("base64")}`;
 
-    return NextResponse.json({ finalImageUrl: dataUrl, fileName });
+    return NextResponse.json({
+      finalImageUrl: dataUrl,
+      fileName,
+      imagemBase: imagemUrl ?? "fallback-navy",
+      estrutura,
+      formato,
+    });
   } catch (err: unknown) {
-    console.error("[montar-criativo]", err);
+    console.error("[agente-2-produtor]", err);
     const message = err instanceof Error ? err.message : "Erro desconhecido";
     return NextResponse.json({ error: message }, { status: 500 });
   }
