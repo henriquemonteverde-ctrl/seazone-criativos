@@ -566,7 +566,7 @@ export default function Home() {
       </div>
 
       <img
-        src="https://qrapd3qjiankddu3.public.blob.vercel-storage.com/apresentadores/henrique/freepik_faca-esse-homem-mantendo-suas-feicoes-roupas-em-estilo-chibicomo-se-estivesse-se-esgueirando-para-espiar-alguma-coisa-expressao-engracada-de-curioso-3d-render-pixar-style-fundo-branco_0001%20%281%29.png"
+        src="https://qrapd3qjiankddu3.public.blob.vercel-storage.com/apresentadores/henrique/henrique.png"
         alt="Henrique"
         onMouseEnter={() => setEscondido(true)}
         onMouseLeave={() => setTimeout(() => setEscondido(false), 2000)}
