@@ -21,14 +21,12 @@ function renderUrl(fileName: string): string {
   return `${BLOB}/${RENDERS}/${encodeURIComponent(fileName)}`;
 }
 
-// Renders por formato e estrutura
 const RENDER_FEED: Record<number, string> = {
   1: renderUrl("Cópia de Novo Campeche Spot II_01_V07.png"),
   2: renderUrl("Cópia de Novo Campeche Spot II_02_V07.png"),
   3: renderUrl("Cópia de Novo Campeche Spot II_03_V07.png"),
 };
 
-// Render 04 é exclusivo para reels; demais como fallback sequencial
 const RENDER_REELS: Record<number, string> = {
   1: renderUrl("Cópia de Novo Campeche Spot II_04_V07.png"),
   2: renderUrl("Cópia de Novo Campeche Spot II_05_Inserção.png"),
@@ -45,6 +43,34 @@ const FORMATOS = {
   feed:  { w: 1080, h: 1350 },
   reels: { w: 1080, h: 1920 },
 };
+
+// ─── Tipo criativo ────────────────────────────────────────────────────────────
+
+export interface CriativoItem {
+  tipo: "estatico" | "narrado" | "apresentador";
+  variacao: number;
+  formato: "feed" | "reels";
+  copy: string;
+  imagemContexto: string;
+  render: string;
+  hipotese: string;
+}
+
+// ─── Resolve render URL por imagemContexto ────────────────────────────────────
+
+function resolveRender(imagemContexto: string, renderHint: string, formato: "feed" | "reels"): string {
+  const renderMap = formato === "reels" ? RENDER_REELS : RENDER_FEED;
+
+  // Hint numérico (ex: "1", "2", "3")
+  const numKey = parseInt(renderHint);
+  if (!isNaN(numKey) && renderMap[numKey]) return renderMap[numKey];
+
+  // Mapeamento por palavras-chave
+  const ctx = (imagemContexto + " " + renderHint).toLowerCase();
+  if (ctx.includes("fachada"))                          return renderMap[3] ?? renderMap[1];
+  if (ctx.includes("rooftop") || ctx.includes("vista")) return renderMap[2] ?? renderMap[1];
+  return renderMap[1];
+}
 
 // ─── Utilitário: fetch → Buffer ───────────────────────────────────────────────
 
@@ -80,29 +106,39 @@ async function upscaleUrl(imageUrl: string): Promise<string> {
 
 async function buildOverlayPNG(
   briefing: Briefing,
+  criativo: CriativoItem,
   formato: { w: number; h: number },
-  estrutura: number,
   fontBuffer: ArrayBuffer,
   fontBoldBuffer: ArrayBuffer,
   logoBase64: string
 ): Promise<Buffer> {
   const { w, h } = formato;
-  const { empreendimento, localizacao, roi, rendimento_mensal, rendimento_anual, fase } = briefing;
+
+  // Suporte a briefing plano (legado) e briefing aninhado (novo Agente 1)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const b = briefing as any;
+  const empreendimento   = b.empreendimento?.nome   ?? b.empreendimento   ?? "";
+  const localizacao      = b.empreendimento?.localizacao ?? b.localizacao  ?? "";
+  const roi              = b.empreendimento?.roi     ?? b.roi              ?? "";
+  const rendimentoMensal = b.empreendimento?.rendimentoMensal ?? b.rendimento_mensal ?? "";
+  const rendimentoAnual  = b.empreendimento?.rendimentoAnual  ?? b.rendimento_anual  ?? "";
+  const fase             = b.empreendimento?.fase    ?? b.fase             ?? "";
 
   const isLancamento = fase?.toUpperCase().includes("LANÇA");
   const isFeed = h === 1350;
 
-  // Tipografia responsiva por formato
+  // Tipografia responsiva
   const roiSize   = isFeed ? 72 : 82;
   const labelSize = isFeed ? 20 : 23;
   const valorSize = isFeed ? 28 : 32;
   const nomeSize  = isFeed ? 22 : 26;
   const localSize = isFeed ? 15 : 18;
   const tagSize   = isFeed ? 18 : 20;
+  const copySize  = isFeed ? 17 : 20;
   const barraH    = isFeed ? 280 : 320;
   const barraY    = h - barraH;
 
-  // Tracejado: linha diagonal até a praia (estrutura 1)
+  // Tracejado
   const lineStartX  = w * 0.35;
   const lineStartY  = h * 0.55;
   const lineEndX    = w * 0.65;
@@ -117,33 +153,21 @@ async function buildOverlayPNG(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const children: any[] = [];
 
-  // ── TAG LANÇAMENTO (topo esquerdo) ──
+  // ── TAG LANÇAMENTO ──
   if (isLancamento) {
     children.push({
       type: "div",
       props: {
         style: {
-          position: "absolute",
-          top: 44,
-          left: 44,
-          width: isFeed ? 215 : 240,
-          height: 50,
-          backgroundColor: CORAL,
-          borderRadius: 6,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          position: "absolute", top: 44, left: 44,
+          width: isFeed ? 215 : 240, height: 50,
+          backgroundColor: CORAL, borderRadius: 6,
+          display: "flex", alignItems: "center", justifyContent: "center",
         },
         children: {
           type: "span",
           props: {
-            style: {
-              fontFamily: "Helvetica",
-              fontSize: tagSize,
-              fontWeight: 700,
-              color: WHITE,
-              letterSpacing: 3.5,
-            },
+            style: { fontFamily: "Helvetica", fontSize: tagSize, fontWeight: 700, color: WHITE, letterSpacing: 3.5 },
             children: "LANÇAMENTO",
           },
         },
@@ -151,18 +175,15 @@ async function buildOverlayPNG(
     });
   }
 
-  // ── TRACEJADO ATÉ A PRAIA (estrutura 1) ──
-  if (estrutura === 1) {
-    // Linha tracejada simulada com repeating-linear-gradient + rotate
+  // ── TRACEJADO (estrutura 1 / contexto aéreo) ──
+  if (criativo.variacao === 1 || criativo.imagemContexto?.toLowerCase().includes("localiz") || criativo.imagemContexto?.toLowerCase().includes("aérea")) {
     children.push({
       type: "div",
       props: {
         style: {
           position: "absolute",
-          left: lineMidX - lineLength / 2,
-          top: lineMidY - 1.25,
-          width: lineLength,
-          height: 2.5,
+          left: lineMidX - lineLength / 2, top: lineMidY - 1.25,
+          width: lineLength, height: 2.5,
           backgroundImage: `repeating-linear-gradient(90deg, ${CORAL} 0px, ${CORAL} 10px, transparent 10px, transparent 17px)`,
           opacity: 0.9,
           transform: `rotate(${lineAngle}deg)`,
@@ -170,86 +191,45 @@ async function buildOverlayPNG(
         },
       },
     });
-    // Círculo externo (halo coral)
     children.push({
       type: "div",
       props: {
         style: {
           position: "absolute",
-          left: lineEndX - 20,
-          top: lineEndY - 20,
-          width: 40,
-          height: 40,
-          backgroundColor: CORAL,
-          borderRadius: "50%",
-          opacity: 0.2,
+          left: lineEndX - 20, top: lineEndY - 20,
+          width: 40, height: 40,
+          backgroundColor: CORAL, borderRadius: "50%", opacity: 0.2,
         },
       },
     });
-    // Círculo interno (sólido)
     children.push({
       type: "div",
       props: {
         style: {
           position: "absolute",
-          left: lineEndX - 10,
-          top: lineEndY - 10,
-          width: 20,
-          height: 20,
-          backgroundColor: CORAL,
-          borderRadius: "50%",
-          opacity: 0.9,
+          left: lineEndX - 10, top: lineEndY - 10,
+          width: 20, height: 20,
+          backgroundColor: CORAL, borderRadius: "50%", opacity: 0.9,
         },
       },
     });
   }
 
-  // ── PIN + NOME DO EMPREENDIMENTO ──
+  // ── PIN + NOME ──
   children.push({
     type: "div",
     props: {
       style: {
         position: "absolute",
-        left: w / 2 - 230,
-        top: h * 0.2 - 34,
-        width: 460,
-        height: 68,
-        backgroundColor: "rgba(0,20,61,0.72)",
-        borderRadius: 12,
-        display: "flex",
-        alignItems: "center",
-        paddingLeft: 20,
-        paddingRight: 20,
+        left: w / 2 - 230, top: h * 0.2 - 34,
+        width: 460, height: 68,
+        backgroundColor: "rgba(0,20,61,0.72)", borderRadius: 12,
+        display: "flex", alignItems: "center",
+        paddingLeft: 20, paddingRight: 20,
       },
       children: [
-        // Pin coral
-        {
-          type: "div",
-          props: {
-            style: {
-              width: 26,
-              height: 26,
-              backgroundColor: CORAL,
-              borderRadius: "50%",
-              marginRight: 16,
-              flexShrink: 0,
-            },
-          },
-        },
-        // Nome
-        {
-          type: "span",
-          props: {
-            style: {
-              fontFamily: "Helvetica",
-              fontSize: nomeSize,
-              fontWeight: 700,
-              color: WHITE,
-              letterSpacing: 1.8,
-            },
-            children: empreendimento.toUpperCase(),
-          },
-        },
+        { type: "div", props: { style: { width: 26, height: 26, backgroundColor: CORAL, borderRadius: "50%", marginRight: 16, flexShrink: 0 } } },
+        { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: nomeSize, fontWeight: 700, color: WHITE, letterSpacing: 1.8 }, children: empreendimento.toUpperCase() } },
       ],
     },
   });
@@ -260,258 +240,101 @@ async function buildOverlayPNG(
     props: {
       style: {
         position: "absolute",
-        left: w / 2 - 190,
-        top: h * 0.2 + 36,
-        width: 380,
-        height: 40,
-        backgroundColor: "rgba(255,255,255,0.10)",
-        borderRadius: 8,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        left: w / 2 - 190, top: h * 0.2 + 36,
+        width: 380, height: 40,
+        backgroundColor: "rgba(255,255,255,0.10)", borderRadius: 8,
+        display: "flex", alignItems: "center", justifyContent: "center",
       },
-      children: {
-        type: "span",
-        props: {
-          style: {
-            fontFamily: "Helvetica",
-            fontSize: localSize,
-            fontWeight: 400,
-            color: "rgba(255,255,255,0.88)",
-            letterSpacing: 1.5,
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: localSize, fontWeight: 400, color: "rgba(255,255,255,0.88)", letterSpacing: 1.5 }, children: localizacao.toUpperCase() } },
+    },
+  });
+
+  // ── COPY HEADLINE (quando fornecido pelo Agente 1) ──
+  if (criativo.copy) {
+    children.push({
+      type: "div",
+      props: {
+        style: {
+          position: "absolute",
+          left: 40, right: 40, top: h * 0.55,
+          backgroundColor: "rgba(0,20,61,0.70)", borderRadius: 10,
+          padding: "14px 20px",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        },
+        children: {
+          type: "span",
+          props: {
+            style: {
+              fontFamily: "Helvetica", fontSize: copySize, fontWeight: 700,
+              color: WHITE, textAlign: "center" as const,
+            },
+            children: criativo.copy,
           },
-          children: localizacao.toUpperCase(),
         },
       },
-    },
-  });
+    });
+  }
 
-  // ── BARRA NAVY INFERIOR ──
-  children.push({
-    type: "div",
-    props: {
-      style: {
-        position: "absolute",
-        left: 0,
-        top: barraY,
-        width: w,
-        height: barraH,
-        backgroundColor: NAVY,
-      },
-    },
-  });
-
-  // Linha coral decorativa no topo da barra
-  children.push({
-    type: "div",
-    props: {
-      style: {
-        position: "absolute",
-        left: 0,
-        top: barraY,
-        width: w,
-        height: 4,
-        backgroundColor: CORAL,
-      },
-    },
-  });
-
-  // Bloco coral lateral esquerdo
-  children.push({
-    type: "div",
-    props: {
-      style: {
-        position: "absolute",
-        left: 0,
-        top: barraY,
-        width: 8,
-        height: barraH,
-        backgroundColor: CORAL,
-      },
-    },
-  });
+  // ── BARRA NAVY ──
+  children.push({ type: "div", props: { style: { position: "absolute", left: 0, top: barraY, width: w, height: barraH, backgroundColor: NAVY } } });
+  children.push({ type: "div", props: { style: { position: "absolute", left: 0, top: barraY, width: w, height: 4, backgroundColor: CORAL } } });
+  children.push({ type: "div", props: { style: { position: "absolute", left: 0, top: barraY, width: 8, height: barraH, backgroundColor: CORAL } } });
 
   // ── ROI PRINCIPAL ──
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: 0,
-        top: barraY + (isFeed ? 88 : 100) - roiSize,
-        width: w,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: {
-            fontFamily: "Helvetica",
-            fontSize: roiSize,
-            fontWeight: 700,
-            color: WHITE,
-            letterSpacing: -2,
-          },
-          children: `${roi} ao ano`,
-        },
-      },
+      style: { position: "absolute", left: 0, top: barraY + (isFeed ? 88 : 100) - roiSize, width: w, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: roiSize, fontWeight: 700, color: WHITE, letterSpacing: -2 }, children: `${roi} ao ano` } },
     },
   });
 
-  // ── LABEL "RETORNO ESTIMADO" ──
+  // ── RETORNO ESTIMADO ──
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: 0,
-        top: barraY + (isFeed ? 120 : 136) - labelSize,
-        width: w,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: {
-            fontFamily: "Helvetica",
-            fontSize: labelSize,
-            fontWeight: 700,
-            color: CORAL,
-            letterSpacing: 5,
-          },
-          children: "RETORNO ESTIMADO",
-        },
-      },
+      style: { position: "absolute", left: 0, top: barraY + (isFeed ? 120 : 136) - labelSize, width: w, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: labelSize, fontWeight: 700, color: CORAL, letterSpacing: 5 }, children: "RETORNO ESTIMADO" } },
     },
   });
 
   // ── DIVISOR HORIZONTAL ──
-  children.push({
-    type: "div",
-    props: {
-      style: {
-        position: "absolute",
-        left: 80,
-        top: barraY + (isFeed ? 142 : 162),
-        width: w - 160,
-        height: 1,
-        backgroundColor: "rgba(255,255,255,0.12)",
-      },
-    },
-  });
+  children.push({ type: "div", props: { style: { position: "absolute", left: 80, top: barraY + (isFeed ? 142 : 162), width: w - 160, height: 1, backgroundColor: "rgba(255,255,255,0.12)" } } });
 
-  // ── RENDIMENTO MENSAL (esquerda) ──
+  // ── RENDIMENTO MENSAL ──
   const mensalX = w / 2 - (isFeed ? 185 : 205);
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: mensalX - 100,
-        top: barraY + (isFeed ? 186 : 212) - valorSize,
-        width: 200,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: { fontFamily: "Helvetica", fontSize: valorSize, fontWeight: 700, color: WHITE },
-          children: rendimento_mensal,
-        },
-      },
+      style: { position: "absolute", left: mensalX - 100, top: barraY + (isFeed ? 186 : 212) - valorSize, width: 200, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: valorSize, fontWeight: 700, color: WHITE }, children: rendimentoMensal } },
     },
   });
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: mensalX - 100,
-        top: barraY + (isFeed ? 210 : 240) - 13,
-        width: 200,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: {
-            fontFamily: "Helvetica",
-            fontSize: 13,
-            fontWeight: 400,
-            color: "rgba(255,255,255,0.45)",
-            letterSpacing: 2,
-          },
-          children: "POR MÊS",
-        },
-      },
+      style: { position: "absolute", left: mensalX - 100, top: barraY + (isFeed ? 210 : 240) - 13, width: 200, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: 13, fontWeight: 400, color: "rgba(255,255,255,0.45)", letterSpacing: 2 }, children: "POR MÊS" } },
     },
   });
 
   // ── DIVISOR VERTICAL ──
-  children.push({
-    type: "div",
-    props: {
-      style: {
-        position: "absolute",
-        left: w / 2,
-        top: barraY + (isFeed ? 152 : 172),
-        width: 1,
-        height: (isFeed ? 224 : 256) - (isFeed ? 152 : 172),
-        backgroundColor: "rgba(255,255,255,0.12)",
-      },
-    },
-  });
+  children.push({ type: "div", props: { style: { position: "absolute", left: w / 2, top: barraY + (isFeed ? 152 : 172), width: 1, height: (isFeed ? 224 : 256) - (isFeed ? 152 : 172), backgroundColor: "rgba(255,255,255,0.12)" } } });
 
-  // ── RENDIMENTO ANUAL (direita) ──
+  // ── RENDIMENTO ANUAL ──
   const anualX = w / 2 + (isFeed ? 185 : 205);
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: anualX - 100,
-        top: barraY + (isFeed ? 186 : 212) - valorSize,
-        width: 200,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: { fontFamily: "Helvetica", fontSize: valorSize, fontWeight: 700, color: WHITE },
-          children: rendimento_anual,
-        },
-      },
+      style: { position: "absolute", left: anualX - 100, top: barraY + (isFeed ? 186 : 212) - valorSize, width: 200, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: valorSize, fontWeight: 700, color: WHITE }, children: rendimentoAnual } },
     },
   });
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: anualX - 100,
-        top: barraY + (isFeed ? 210 : 240) - 13,
-        width: 200,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: {
-            fontFamily: "Helvetica",
-            fontSize: 13,
-            fontWeight: 400,
-            color: "rgba(255,255,255,0.45)",
-            letterSpacing: 2,
-          },
-          children: "POR ANO",
-        },
-      },
+      style: { position: "absolute", left: anualX - 100, top: barraY + (isFeed ? 210 : 240) - 13, width: 200, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: 13, fontWeight: 400, color: "rgba(255,255,255,0.45)", letterSpacing: 2 }, children: "POR ANO" } },
     },
   });
 
@@ -519,26 +342,8 @@ async function buildOverlayPNG(
   children.push({
     type: "div",
     props: {
-      style: {
-        position: "absolute",
-        left: 0,
-        top: barraY + (isFeed ? 242 : 278) - 12,
-        width: w,
-        display: "flex",
-        justifyContent: "center",
-      },
-      children: {
-        type: "span",
-        props: {
-          style: {
-            fontFamily: "Helvetica",
-            fontSize: 12,
-            fontWeight: 400,
-            color: "rgba(255,255,255,0.30)",
-          },
-          children: "*Valores estimados. Rentabilidade não é garantida.",
-        },
-      },
+      style: { position: "absolute", left: 0, top: barraY + (isFeed ? 242 : 278) - 12, width: w, display: "flex", justifyContent: "center" },
+      children: { type: "span", props: { style: { fontFamily: "Helvetica", fontSize: 12, fontWeight: 400, color: "rgba(255,255,255,0.30)" }, children: "*Valores estimados. Rentabilidade não é garantida." } },
     },
   });
 
@@ -547,29 +352,14 @@ async function buildOverlayPNG(
     type: "img",
     props: {
       src: `data:image/png;base64,${logoBase64}`,
-      style: {
-        position: "absolute",
-        left: w / 2 - 65,
-        top: barraY + barraH - 54,
-        width: 130,
-        height: 32,
-        opacity: 0.88,
-      },
+      style: { position: "absolute", left: w / 2 - 65, top: barraY + barraH - 54, width: 130, height: 32, opacity: 0.88 },
     },
   });
 
-  // ── Render com Satori ──
   const element = {
     type: "div",
     props: {
-      style: {
-        position: "relative",
-        width: w,
-        height: h,
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-      },
+      style: { position: "relative", width: w, height: h, display: "flex", flexDirection: "column", overflow: "hidden" },
       children,
     },
   };
@@ -593,23 +383,22 @@ async function buildOverlayPNG(
 
 export async function POST(req: NextRequest) {
   try {
-    const { briefing, formato = "feed", estrutura = 1 } = (await req.json()) as {
+    const { briefing, criativo } = (await req.json()) as {
       briefing: Briefing;
-      formato: "feed" | "reels";
-      estrutura: 1 | 2 | 3;
+      criativo: CriativoItem;
     };
 
-    if (!briefing) {
-      return NextResponse.json({ error: "Briefing não informado" }, { status: 400 });
+    if (!briefing || !criativo) {
+      return NextResponse.json({ error: "briefing e criativo são obrigatórios" }, { status: 400 });
     }
 
-    const dim = FORMATOS[formato];
+    const formato = criativo.formato ?? "feed";
+    const dim     = FORMATOS[formato] ?? FORMATOS.feed;
 
-    // 1. Escolher render base conforme formato e estrutura
-    const renderMap = formato === "reels" ? RENDER_REELS : RENDER_FEED;
-    const imagemUrl = renderMap[estrutura] ?? renderMap[1];
+    // 1. Resolver render baseado em imagemContexto
+    const imagemUrl = resolveRender(criativo.imagemContexto ?? "", criativo.render ?? "", formato);
 
-    // 2. Tentar upscale via fal-ai/clarity-upscaler; fallback para URL original
+    // 2. Tentar upscale; fallback para URL original
     let finalImageUrl = imagemUrl;
     try {
       finalImageUrl = await upscaleUrl(imagemUrl);
@@ -619,7 +408,7 @@ export async function POST(req: NextRequest) {
       finalImageUrl = imagemUrl;
     }
 
-    // 3. Baixar imagem upscalada (ou original) e redimensionar
+    // 3. Baixar e redimensionar imagem base
     let base: Buffer;
     try {
       const imgBuffer = await fetchBuffer(finalImageUrl);
@@ -627,21 +416,13 @@ export async function POST(req: NextRequest) {
         .resize(dim.w, dim.h, { fit: "cover", position: "centre" })
         .toBuffer();
     } catch {
-      // Render inacessível — usa fundo navy
       console.warn("[agente-2-produtor] render inacessível, usando fallback navy");
       base = await sharp({
-        create: {
-          width: dim.w,
-          height: dim.h,
-          channels: 3,
-          background: { r: 0, g: 20, b: 61 },
-        },
-      })
-        .png()
-        .toBuffer();
+        create: { width: dim.w, height: dim.h, channels: 3, background: { r: 0, g: 20, b: 61 } },
+      }).png().toBuffer();
     }
 
-    // 4. Baixar fontes e logo do Blob em paralelo
+    // 4. Baixar fontes e logo em paralelo
     const fontUrl     = `${BLOB}/identidade/${encodeURIComponent("Helvetica.ttf")}`;
     const fontBoldUrl = `${BLOB}/identidade/${encodeURIComponent("Helvetica-Bold.ttf")}`;
     const [fontRes, fontBoldRes, logoRes] = await Promise.all([
@@ -654,33 +435,24 @@ export async function POST(req: NextRequest) {
     const logoBase64     = Buffer.from(await logoRes.arrayBuffer()).toString("base64");
 
     // 5. Gerar overlay PNG via Satori + Resvg
-    const overlayBuffer = await buildOverlayPNG(
-      briefing, dim, estrutura, fontBuffer, fontBoldBuffer, logoBase64
-    );
+    const overlayBuffer = await buildOverlayPNG(briefing, criativo, dim, fontBuffer, fontBoldBuffer, logoBase64);
 
-    // 6. Compositar overlay sobre o render base
+    // 6. Compositar overlay sobre render base
     const final = await sharp(base)
       .composite([{ input: overlayBuffer, top: 0, left: 0 }])
       .png()
       .toBuffer();
 
-    // 7. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
-    const slug = briefing.empreendimento
-      .toLowerCase()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
-    const fileName = `SZI_${slug}_${formato}_V1_E${estrutura}_${Date.now()}.png`;
+    // 7. Nome padronizado
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nomeEmpreend = (briefing as any).empreendimento?.nome ?? (briefing as any).empreendimento ?? "seazone";
+    const slug = String(nomeEmpreend).toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+    const fileName = `SZI_${slug}_${formato}_V${criativo.variacao}_${criativo.tipo}_${Date.now()}.png`;
 
     // 8. Retornar base64
     const dataUrl = `data:image/png;base64,${final.toString("base64")}`;
 
-    return NextResponse.json({
-      finalImageUrl: dataUrl,
-      fileName,
-      imagemBase: finalImageUrl,
-      estrutura,
-      formato,
-    });
+    return NextResponse.json({ finalImageUrl: dataUrl, fileName, imagemBase: finalImageUrl, criativo });
   } catch (err: unknown) {
     console.error("[agente-2-produtor]", err);
     const message = err instanceof Error ? err.message : "Erro desconhecido";
