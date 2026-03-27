@@ -104,7 +104,7 @@ export default function Home() {
         <div className="mb-12 text-center">
           <div className="flex justify-center mb-3">
             <img
-              src="/assets/Logos seazone/logo seazone full branca.png"
+              src="https://qrapd3qjiankddu3.public.blob.vercel-storage.com/logos/logo%20seazone%20full%20branca.png"
               alt="Seazone"
               className="h-10 object-contain"
             />
