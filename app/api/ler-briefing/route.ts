@@ -186,7 +186,8 @@ export async function POST(req: NextRequest) {
 
       const html = await pageRes.text();
 
-      const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
+      // ── ETAPA 1: Extrair dados do empreendimento ────────────────────────────
+      const etapa1Res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -195,41 +196,72 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 8000,
-          system: `Você é um estrategista de marketing imobiliário. Analise este briefing e extraia APENAS o que está explicitamente nele.
+          max_tokens: 2000,
+          system: `Você é um assistente que extrai dados estruturados de briefings imobiliários. Leia o conteúdo e retorne APENAS JSON válido, sem markdown, sem explicações.
 
-TIPOS DE CRIATIVOS QUE EXISTEM:
+Retorne exatamente neste formato:
+{
+  "nome": "",
+  "localizacao": "",
+  "roi": "",
+  "rendimentoMensal": "",
+  "rendimentoAnual": "",
+  "ticketMedio": "",
+  "fase": "",
+  "diferenciais": [],
+  "donts": [],
+  "publicoAlvo": "",
+  "tiposDeCriativos": [],
+  "variacoesPorTipo": {}
+}`,
+          messages: [
+            {
+              role: "user",
+              content: `Extraia os dados deste briefing Seazone:\n\n${html.slice(0, 6000)}`,
+            },
+          ],
+        }),
+      });
+
+      if (!etapa1Res.ok) {
+        const errText = await etapa1Res.text();
+        throw new Error(`Claude API etapa 1 ${etapa1Res.status}: ${errText}`);
+      }
+
+      const etapa1Data = await etapa1Res.json();
+      const etapa1Text: string = etapa1Data.content?.[0]?.text ?? "";
+      const dadosEmpreendimento = JSON.parse(etapa1Text.replace(/```json|```/g, "").trim());
+
+      // ── ETAPA 2: Gerar plano de criativos ──────────────────────────────────
+      const etapa2Res = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          system: `Você é um estrategista de marketing imobiliário. Com base nos dados estruturados do empreendimento, gere o array de criativos.
+
+TIPOS DE CRIATIVOS:
 1. ESTÁTICO - arte estática
 2. NARRADO - vídeo com narração em áudio
 3. APRESENTADOR - vídeo gerado com apresentador via Kling AI
 
 REGRA DE FORMATOS (sempre gerar os dois):
 - Cada criativo vira 2 peças: feed (1080x1350) + reels (1080x1920)
-- Exemplo: 5 variações estáticas = 10 peças (5 feed + 5 reels)
-- Se o briefing especificar resolução diferente, use a do briefing
-
-PARA CADA CRIATIVO DO ARRAY, extraia do briefing:
-- tipo: 'estatico' | 'narrado' | 'apresentador'
-- variacao: número da variação (1, 2, 3...)
-- formato: 'feed' | 'reels'
-- copy: texto/copy específico desta peça conforme briefing
-- imagemContexto: qual imagem usar (ex: 'fachada', 'rooftop', 'localização', 'área comum') conforme briefing
-- render: qual render do blob usar baseado no imagemContexto
-- hipotese: qual hipótese de comunicação esta peça testa
 
 IMPORTANTE: O array criativos é OBRIGATÓRIO. Sempre retorne pelo menos 2 itens no array criativos (feed + reels do tipo estático), mesmo que o briefing não especifique explicitamente.
 
-REGRAS OBRIGATÓRIAS:
-- Não invente variações que não estejam no briefing
-- Não assuma informações ausentes
-- Se briefing não especificar quantidade, use 1 variação por tipo presente
+REGRAS:
+- Não invente variações além do que os dados indicam
+- Se tiposDeCriativos estiver vazio, use 1 variação estática expandida nos 2 formatos
 - Expanda sempre nos 2 formatos (feed + reels)
-- Copy e contexto de imagem devem vir literalmente do briefing
 
 Retorne APENAS JSON válido, sem markdown, sem explicações:
 {
-  "empreendimento": { "nome": "", "localizacao": "", "roi": "", "rendimentoMensal": "", "rendimentoAnual": "", "fase": "", "diferenciais": [], "donts": [] },
-  "nomenclatura": "",
   "criativos": [
     { "tipo": "", "variacao": 1, "formato": "", "copy": "", "imagemContexto": "", "render": "", "hipotese": "" }
   ]
@@ -237,21 +269,23 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
           messages: [
             {
               role: "user",
-              content: `Extraia os dados deste briefing Seazone:\n\n${html.slice(0, 15000)}`,
+              content: `Dados do empreendimento:\n${JSON.stringify(dadosEmpreendimento, null, 2)}\n\nGere o array de criativos.`,
             },
           ],
         }),
       });
 
-      if (!claudeRes.ok) {
-        const errText = await claudeRes.text();
-        throw new Error(`Claude API ${claudeRes.status}: ${errText}`);
+      if (!etapa2Res.ok) {
+        const errText = await etapa2Res.text();
+        throw new Error(`Claude API etapa 2 ${etapa2Res.status}: ${errText}`);
       }
 
-      const data = await claudeRes.json();
-      const rawText: string = data.content?.[0]?.text ?? "";
-      const cleaned = rawText.replace(/```json|```/g, "").trim();
-      const dadosExtraidos = JSON.parse(cleaned);
+      const etapa2Data = await etapa2Res.json();
+      const etapa2Text: string = etapa2Data.content?.[0]?.text ?? "";
+      const dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
+
+      // ── Combinar resultados ─────────────────────────────────────────────────
+      const dadosExtraidos = { empreendimento: dadosEmpreendimento, ...dadosCriativos };
       const nomenclatura = gerarNomenclaturas(dadosExtraidos);
       const copy_paste = gerarCopyPaste(nomenclatura);
       const briefing: Briefing = { ...dadosExtraidos, nomenclatura, copy_paste };
