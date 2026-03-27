@@ -241,23 +241,23 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
         }),
       });
 
-      if (claudeRes.ok) {
-        const data = await claudeRes.json();
-        const dadosExtraidos = JSON.parse(data.content[0].text);
-        const nomenclatura = gerarNomenclaturas(dadosExtraidos);
-        const copy_paste = gerarCopyPaste(nomenclatura);
-        const briefing: Briefing = { ...dadosExtraidos, nomenclatura, copy_paste };
-        return NextResponse.json(briefing);
+      if (!claudeRes.ok) {
+        const errText = await claudeRes.text();
+        throw new Error(`Claude API ${claudeRes.status}: ${errText}`);
       }
+
+      const data = await claudeRes.json();
+      const rawText: string = data.content?.[0]?.text ?? "";
+      const cleaned = rawText.replace(/```json|```/g, "").trim();
+      const dadosExtraidos = JSON.parse(cleaned);
+      const nomenclatura = gerarNomenclaturas(dadosExtraidos);
+      const copy_paste = gerarCopyPaste(nomenclatura);
+      const briefing: Briefing = { ...dadosExtraidos, nomenclatura, copy_paste };
+      return NextResponse.json(briefing);
     }
 
-    // 3. Link não reconhecido
-    return NextResponse.json(
-      {
-        error: `Briefing não reconhecido. Configure ANTHROPIC_API_KEY para leitura automática de novos empreendimentos.`,
-      },
-      { status: 422 }
-    );
+    // 3. Sem API key e domínio não reconhecido
+    throw new Error("ANTHROPIC_API_KEY não configurada e domínio não reconhecido");
   } catch (err: unknown) {
     console.error("[agente-1-briefing]", err);
     const message = err instanceof Error ? err.message : "Erro desconhecido";
