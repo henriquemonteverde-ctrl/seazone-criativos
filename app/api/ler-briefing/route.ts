@@ -34,42 +34,6 @@ export interface Nomenclatura {
   a_partir_de: string;
 }
 
-// ─── Briefings conhecidos ─────────────────────────────────────────────────────
-
-const BRIEFINGS_CONHECIDOS: Record<string, Omit<Briefing, "nomenclatura" | "copy_paste">> = {
-  "novocampechespotiilancamento.lovable.app": {
-    empreendimento: "NOVO CAMPECHE SPOT II",
-    vertical: "SZI",
-    localizacao: "NOVO CAMPECHE, FLORIANÓPOLIS - SC",
-    fase: "LANÇAMENTO",
-    roi: "16,4%",
-    rendimento_mensal: "~R$ 5.500/mês",
-    rendimento_anual: "R$ 66.424/ano",
-    ticket_medio: "R$ 350.190",
-    pontos_fortes: [
-      "ROI projetado de 16,4% ao ano",
-      "Rentabilidade líquida mensal em reais",
-      "Região consolidada com forte vocação turística",
-      "Um dos bairros que mais faturam em Florianópolis e no Brasil",
-      "Infraestrutura completa (mercados, farmácias, restaurantes)",
-      "Modelo SPOT pensado desde a origem para short stay",
-      "Gestão profissional Seazone",
-      "Próximo ao aeroporto",
-    ],
-    donts: [
-      "Pé na areia",
-      "Vista para o mar nas unidades — só no rooftop",
-      "Distância exata da praia",
-      "Único lançamento ou exclusivo",
-      "Filtros escuros, blur, molduras, efeitos dramáticos",
-      "Não borrar as laterais da tela",
-      "Não colocar músicas no vídeo",
-      "Não usar efeitos que escureçam a imagem",
-    ],
-    publico_alvo: "Investidor com foco em performance e renda passiva, região com vocação turística",
-  },
-};
-
 // ─── Gerador de nomenclatura ──────────────────────────────────────────────────
 
 function gerarNomenclaturas(dados: Omit<Briefing, "nomenclatura" | "copy_paste">): Nomenclatura[] {
@@ -142,17 +106,6 @@ A partir de: ${n.a_partir_de}
   return linhas.join("\n\n");
 }
 
-// ─── Extrator de domínio ──────────────────────────────────────────────────────
-
-function extrairDominio(url: string): string {
-  try {
-    const urlObj = new URL(url.startsWith("http") ? url : `https://${url}`);
-    return urlObj.hostname.replace("www.", "");
-  } catch {
-    return url.replace(/^https?:\/\//, "").replace("www.", "").split("/")[0];
-  }
-}
-
 // ─── Handler ──────────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -163,28 +116,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL não informada" }, { status: 400 });
     }
 
-    const dominio = extrairDominio(url);
-
-    // 1. Briefing conhecido — resposta imediata
-    const dadosConhecidos = BRIEFINGS_CONHECIDOS[dominio];
-    if (dadosConhecidos) {
-      const nomenclatura = gerarNomenclaturas(dadosConhecidos);
-      const copy_paste = gerarCopyPaste(nomenclatura);
-      const briefing: Briefing = { ...dadosConhecidos, nomenclatura, copy_paste };
-      return NextResponse.json(briefing);
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error("ANTHROPIC_API_KEY não configurada");
     }
 
-    // 2. Leitura automática via Claude (quando ANTHROPIC_API_KEY estiver disponível)
-    if (process.env.ANTHROPIC_API_KEY) {
-      const pageRes = await fetch(url.startsWith("http") ? url : `https://${url}`, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
-        },
-      });
+    // 1. Fetch do HTML da página
+    const pageRes = await fetch(url.startsWith("http") ? url : `https://${url}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+      },
+    });
 
-      if (!pageRes.ok) throw new Error("Não foi possível acessar o link do briefing");
+    if (!pageRes.ok) throw new Error("Não foi possível acessar o link do briefing");
 
-      const html = await pageRes.text();
+    const html = await pageRes.text();
 
       // ── ETAPA 1: Extrair dados do empreendimento ────────────────────────────
       const etapa1Res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -308,10 +253,6 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
           criativos: criativosFallback,
         });
       }
-    }
-
-    // 3. Sem API key e domínio não reconhecido
-    throw new Error("ANTHROPIC_API_KEY não configurada e domínio não reconhecido");
   } catch (err: unknown) {
     console.error("[agente-1-briefing]", err);
     const message = err instanceof Error ? err.message : "Erro desconhecido";
