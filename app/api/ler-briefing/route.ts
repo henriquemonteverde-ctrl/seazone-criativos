@@ -195,7 +195,7 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
+          max_tokens: 8000,
           system: `Você é um estrategista de marketing imobiliário. Analise este briefing e extraia APENAS o que está explicitamente nele.
 
 TIPOS DE CRIATIVOS QUE EXISTEM:
@@ -216,6 +216,8 @@ PARA CADA CRIATIVO DO ARRAY, extraia do briefing:
 - imagemContexto: qual imagem usar (ex: 'fachada', 'rooftop', 'localização', 'área comum') conforme briefing
 - render: qual render do blob usar baseado no imagemContexto
 - hipotese: qual hipótese de comunicação esta peça testa
+
+IMPORTANTE: O array criativos é OBRIGATÓRIO. Sempre retorne pelo menos 2 itens no array criativos (feed + reels do tipo estático), mesmo que o briefing não especifique explicitamente.
 
 REGRAS OBRIGATÓRIAS:
 - Não invente variações que não estejam no briefing
