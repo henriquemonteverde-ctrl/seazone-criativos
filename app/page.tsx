@@ -370,7 +370,7 @@ export default function Home() {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ finalImageUrl, briefing, fileName }),
         });
-        if (!rr.ok) { const e = await rr.json().catch(() => ({})); throw new Error((e as {error?:string}).error ?? "Falha ao revisar"); }
+        if (!rr.ok) { break; } // revisão indisponível — aceita criativo gerado
         const rev = await rr.json();
         nota = rev.nota;
         if (rev.aprovado) break;
