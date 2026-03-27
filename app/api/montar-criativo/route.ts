@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fal } from "@fal-ai/client";
 import sharp from "sharp";
-import fs from "fs";
-import path from "path";
+import satori from "satori";
+import { Resvg } from "@resvg/resvg-js";
 
 import type { Briefing } from "../ler-briefing/route";
 
@@ -76,13 +76,16 @@ async function upscaleUrl(imageUrl: string): Promise<string> {
   return upscaledUrl;
 }
 
-// ─── SVG de overlays ─────────────────────────────────────────────────────────
+// ─── Overlay via Satori ───────────────────────────────────────────────────────
 
-function buildOverlaySVG(
+async function buildOverlayPNG(
   briefing: Briefing,
   formato: { w: number; h: number },
-  estrutura: number
-): string {
+  estrutura: number,
+  fontBuffer: ArrayBuffer,
+  fontBoldBuffer: ArrayBuffer,
+  logoBase64: string
+): Promise<Buffer> {
   const { w, h } = formato;
   const { empreendimento, localizacao, roi, rendimento_mensal, rendimento_anual, fase } = briefing;
 
@@ -99,150 +102,491 @@ function buildOverlaySVG(
   const barraH    = isFeed ? 280 : 320;
   const barraY    = h - barraH;
 
-  // Tracejado só na estrutura 1 (aérea, indica acesso à praia)
-  const tracejado =
-    estrutura === 1
-      ? `<line x1="${w * 0.35}" y1="${h * 0.55}" x2="${w * 0.65}" y2="${h * 0.28}"
-           stroke="${CORAL}" stroke-width="2.5" stroke-dasharray="10,7" opacity="0.9"/>
-         <circle cx="${w * 0.65}" cy="${h * 0.28}" r="10" fill="${CORAL}" opacity="0.9"/>
-         <circle cx="${w * 0.65}" cy="${h * 0.28}" r="20" fill="${CORAL}" opacity="0.2"/>`
-      : "";
+  // Tracejado: linha diagonal até a praia (estrutura 1)
+  const lineStartX  = w * 0.35;
+  const lineStartY  = h * 0.55;
+  const lineEndX    = w * 0.65;
+  const lineEndY    = h * 0.28;
+  const dx          = lineEndX - lineStartX;
+  const dy          = lineEndY - lineStartY;
+  const lineLength  = Math.sqrt(dx * dx + dy * dy);
+  const lineAngle   = Math.atan2(dy, dx) * 180 / Math.PI;
+  const lineMidX    = (lineStartX + lineEndX) / 2;
+  const lineMidY    = (lineStartY + lineEndY) / 2;
 
-  return `
-<svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <defs><style>
-    @font-face {
-      font-family: 'Helvetica';
-      src: url('/tmp/Helvetica.ttf') format('truetype');
-      font-weight: normal;
-    }
-    @font-face {
-      font-family: 'Helvetica';
-      src: url('/tmp/Helvetica-Bold.ttf') format('truetype');
-      font-weight: bold;
-    }
-  </style></defs>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const children: any[] = [];
 
-  <!-- ── TAG LANÇAMENTO (topo esquerdo) ── -->
-  ${isLancamento ? `
-  <rect x="44" y="44" width="${isFeed ? 215 : 240}" height="50" rx="6" fill="${CORAL}"/>
-  <text x="${isFeed ? 151 : 164}" y="76"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="${tagSize}" font-weight="800" fill="${WHITE}"
-    text-anchor="middle" letter-spacing="3.5">
-    LANÇAMENTO
-  </text>` : ""}
+  // ── TAG LANÇAMENTO (topo esquerdo) ──
+  if (isLancamento) {
+    children.push({
+      type: "div",
+      props: {
+        style: {
+          position: "absolute",
+          top: 44,
+          left: 44,
+          width: isFeed ? 215 : 240,
+          height: 50,
+          backgroundColor: CORAL,
+          borderRadius: 6,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        },
+        children: {
+          type: "span",
+          props: {
+            style: {
+              fontFamily: "Helvetica",
+              fontSize: tagSize,
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: 3.5,
+            },
+            children: "LANÇAMENTO",
+          },
+        },
+      },
+    });
+  }
 
-  <!-- ── TRACEJADO ATÉ A PRAIA (estrutura 1) ── -->
-  ${tracejado}
+  // ── TRACEJADO ATÉ A PRAIA (estrutura 1) ──
+  if (estrutura === 1) {
+    // Linha tracejada simulada com repeating-linear-gradient + rotate
+    children.push({
+      type: "div",
+      props: {
+        style: {
+          position: "absolute",
+          left: lineMidX - lineLength / 2,
+          top: lineMidY - 1.25,
+          width: lineLength,
+          height: 2.5,
+          backgroundImage: `repeating-linear-gradient(90deg, ${CORAL} 0px, ${CORAL} 10px, transparent 10px, transparent 17px)`,
+          opacity: 0.9,
+          transform: `rotate(${lineAngle}deg)`,
+          transformOrigin: "50% 50%",
+        },
+      },
+    });
+    // Círculo externo (halo coral)
+    children.push({
+      type: "div",
+      props: {
+        style: {
+          position: "absolute",
+          left: lineEndX - 20,
+          top: lineEndY - 20,
+          width: 40,
+          height: 40,
+          backgroundColor: CORAL,
+          borderRadius: "50%",
+          opacity: 0.2,
+        },
+      },
+    });
+    // Círculo interno (sólido)
+    children.push({
+      type: "div",
+      props: {
+        style: {
+          position: "absolute",
+          left: lineEndX - 10,
+          top: lineEndY - 10,
+          width: 20,
+          height: 20,
+          backgroundColor: CORAL,
+          borderRadius: "50%",
+          opacity: 0.9,
+        },
+      },
+    });
+  }
 
-  <!-- ── PIN + NOME DO EMPREENDIMENTO ── -->
-  <g transform="translate(${w / 2}, ${h * 0.2})">
-    <rect x="-230" y="-34" width="460" height="68" rx="12"
-      fill="${NAVY}" opacity="0.72"/>
-    <!-- pin coral -->
-    <circle cx="-195" cy="-2" r="13" fill="${CORAL}"/>
-    <circle cx="-195" cy="-6" r="6" fill="${WHITE}" opacity="0.9"/>
-    <ellipse cx="-195" cy="12" rx="4" ry="2" fill="${CORAL}" opacity="0.5"/>
-    <!-- nome -->
-    <text x="-168" y="10"
-      font-family="Helvetica, Arial, sans-serif"
-      font-size="${nomeSize}" font-weight="800" fill="${WHITE}"
-      letter-spacing="1.8">
-      ${empreendimento.toUpperCase()}
-    </text>
-  </g>
+  // ── PIN + NOME DO EMPREENDIMENTO ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: w / 2 - 230,
+        top: h * 0.2 - 34,
+        width: 460,
+        height: 68,
+        backgroundColor: "rgba(0,20,61,0.72)",
+        borderRadius: 12,
+        display: "flex",
+        alignItems: "center",
+        paddingLeft: 20,
+        paddingRight: 20,
+      },
+      children: [
+        // Pin coral
+        {
+          type: "div",
+          props: {
+            style: {
+              width: 26,
+              height: 26,
+              backgroundColor: CORAL,
+              borderRadius: "50%",
+              marginRight: 16,
+              flexShrink: 0,
+            },
+          },
+        },
+        // Nome
+        {
+          type: "span",
+          props: {
+            style: {
+              fontFamily: "Helvetica",
+              fontSize: nomeSize,
+              fontWeight: 700,
+              color: WHITE,
+              letterSpacing: 1.8,
+            },
+            children: empreendimento.toUpperCase(),
+          },
+        },
+      ],
+    },
+  });
 
-  <!-- ── LOCALIZAÇÃO ── -->
-  <g transform="translate(${w / 2}, ${h * 0.2 + 56})">
-    <rect x="-190" y="-20" width="380" height="40" rx="8"
-      fill="${WHITE}" opacity="0.1"/>
-    <text x="0" y="10"
-      font-family="Helvetica, Arial, sans-serif"
-      font-size="${localSize}" fill="${WHITE}"
-      text-anchor="middle" letter-spacing="1.5" opacity="0.88">
-      ${localizacao.toUpperCase()}
-    </text>
-  </g>
+  // ── LOCALIZAÇÃO ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: w / 2 - 190,
+        top: h * 0.2 + 36,
+        width: 380,
+        height: 40,
+        backgroundColor: "rgba(255,255,255,0.10)",
+        borderRadius: 8,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: {
+            fontFamily: "Helvetica",
+            fontSize: localSize,
+            fontWeight: 400,
+            color: "rgba(255,255,255,0.88)",
+            letterSpacing: 1.5,
+          },
+          children: localizacao.toUpperCase(),
+        },
+      },
+    },
+  });
 
-  <!-- ── BARRA NAVY INFERIOR ── -->
-  <rect x="0" y="${barraY}" width="${w}" height="${barraH}" fill="${NAVY}"/>
-  <!-- linha coral decorativa no topo da barra -->
-  <rect x="0" y="${barraY}" width="${w}" height="4" fill="${CORAL}"/>
-  <!-- bloco coral lateral esquerdo -->
-  <rect x="0" y="${barraY}" width="8" height="${barraH}" fill="${CORAL}"/>
+  // ── BARRA NAVY INFERIOR ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 0,
+        top: barraY,
+        width: w,
+        height: barraH,
+        backgroundColor: NAVY,
+      },
+    },
+  });
 
-  <!-- ── ROI PRINCIPAL ── -->
-  <text x="${w / 2}" y="${barraY + (isFeed ? 88 : 100)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="${roiSize}" font-weight="900" fill="${WHITE}"
-    text-anchor="middle" letter-spacing="-2">
-    ${roi} ao ano
-  </text>
+  // Linha coral decorativa no topo da barra
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 0,
+        top: barraY,
+        width: w,
+        height: 4,
+        backgroundColor: CORAL,
+      },
+    },
+  });
 
-  <!-- ── LABEL "RETORNO ESTIMADO" ── -->
-  <text x="${w / 2}" y="${barraY + (isFeed ? 120 : 136)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="${labelSize}" font-weight="600" fill="${CORAL}"
-    text-anchor="middle" letter-spacing="5">
-    RETORNO ESTIMADO
-  </text>
+  // Bloco coral lateral esquerdo
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 0,
+        top: barraY,
+        width: 8,
+        height: barraH,
+        backgroundColor: CORAL,
+      },
+    },
+  });
 
-  <!-- ── DIVISOR HORIZONTAL ── -->
-  <line x1="80" y1="${barraY + (isFeed ? 142 : 162)}"
-        x2="${w - 80}" y2="${barraY + (isFeed ? 142 : 162)}"
-    stroke="${WHITE}" stroke-width="1" opacity="0.12"/>
+  // ── ROI PRINCIPAL ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 0,
+        top: barraY + (isFeed ? 88 : 100) - roiSize,
+        width: w,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: {
+            fontFamily: "Helvetica",
+            fontSize: roiSize,
+            fontWeight: 700,
+            color: WHITE,
+            letterSpacing: -2,
+          },
+          children: `${roi} ao ano`,
+        },
+      },
+    },
+  });
 
-  <!-- ── RENDIMENTO MENSAL (esquerda) ── -->
-  <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="${valorSize}" font-weight="700" fill="${WHITE}"
-    text-anchor="middle">
-    ${rendimento_mensal}
-  </text>
-  <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="13" fill="${WHITE}"
-    text-anchor="middle" opacity="0.45" letter-spacing="2">
-    POR MÊS
-  </text>
+  // ── LABEL "RETORNO ESTIMADO" ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 0,
+        top: barraY + (isFeed ? 120 : 136) - labelSize,
+        width: w,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: {
+            fontFamily: "Helvetica",
+            fontSize: labelSize,
+            fontWeight: 700,
+            color: CORAL,
+            letterSpacing: 5,
+          },
+          children: "RETORNO ESTIMADO",
+        },
+      },
+    },
+  });
 
-  <!-- ── DIVISOR VERTICAL ── -->
-  <line x1="${w / 2}" y1="${barraY + (isFeed ? 152 : 172)}"
-        x2="${w / 2}" y2="${barraY + (isFeed ? 224 : 256)}"
-    stroke="${WHITE}" stroke-width="1" opacity="0.12"/>
+  // ── DIVISOR HORIZONTAL ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 80,
+        top: barraY + (isFeed ? 142 : 162),
+        width: w - 160,
+        height: 1,
+        backgroundColor: "rgba(255,255,255,0.12)",
+      },
+    },
+  });
 
-  <!-- ── RENDIMENTO ANUAL (direita) ── -->
-  <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="${valorSize}" font-weight="700" fill="${WHITE}"
-    text-anchor="middle">
-    ${rendimento_anual}
-  </text>
-  <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="13" fill="${WHITE}"
-    text-anchor="middle" opacity="0.45" letter-spacing="2">
-    POR ANO
-  </text>
+  // ── RENDIMENTO MENSAL (esquerda) ──
+  const mensalX = w / 2 - (isFeed ? 185 : 205);
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: mensalX - 100,
+        top: barraY + (isFeed ? 186 : 212) - valorSize,
+        width: 200,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: { fontFamily: "Helvetica", fontSize: valorSize, fontWeight: 700, color: WHITE },
+          children: rendimento_mensal,
+        },
+      },
+    },
+  });
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: mensalX - 100,
+        top: barraY + (isFeed ? 210 : 240) - 13,
+        width: 200,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: {
+            fontFamily: "Helvetica",
+            fontSize: 13,
+            fontWeight: 400,
+            color: "rgba(255,255,255,0.45)",
+            letterSpacing: 2,
+          },
+          children: "POR MÊS",
+        },
+      },
+    },
+  });
 
-  <!-- ── DISCLAIMER ── -->
-  <text x="${w / 2}" y="${barraY + (isFeed ? 242 : 278)}"
-    font-family="Helvetica, Arial, sans-serif"
-    font-size="12" fill="${WHITE}"
-    text-anchor="middle" opacity="0.3">
-    *Valores estimados. Rentabilidade não é garantida.
-  </text>
+  // ── DIVISOR VERTICAL ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: w / 2,
+        top: barraY + (isFeed ? 152 : 172),
+        width: 1,
+        height: (isFeed ? 224 : 256) - (isFeed ? 152 : 172),
+        backgroundColor: "rgba(255,255,255,0.12)",
+      },
+    },
+  });
 
-  <!-- ── LOGO SEAZONE VIA BLOB ── -->
-  <image
-    href="${ASSETS.logoSeazone}"
-    x="${w / 2 - 65}" y="${barraY + barraH - 54}"
-    width="130" height="32"
-    preserveAspectRatio="xMidYMid meet"
-    opacity="0.88"/>
+  // ── RENDIMENTO ANUAL (direita) ──
+  const anualX = w / 2 + (isFeed ? 185 : 205);
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: anualX - 100,
+        top: barraY + (isFeed ? 186 : 212) - valorSize,
+        width: 200,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: { fontFamily: "Helvetica", fontSize: valorSize, fontWeight: 700, color: WHITE },
+          children: rendimento_anual,
+        },
+      },
+    },
+  });
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: anualX - 100,
+        top: barraY + (isFeed ? 210 : 240) - 13,
+        width: 200,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: {
+            fontFamily: "Helvetica",
+            fontSize: 13,
+            fontWeight: 400,
+            color: "rgba(255,255,255,0.45)",
+            letterSpacing: 2,
+          },
+          children: "POR ANO",
+        },
+      },
+    },
+  });
 
-</svg>`.trim();
+  // ── DISCLAIMER ──
+  children.push({
+    type: "div",
+    props: {
+      style: {
+        position: "absolute",
+        left: 0,
+        top: barraY + (isFeed ? 242 : 278) - 12,
+        width: w,
+        display: "flex",
+        justifyContent: "center",
+      },
+      children: {
+        type: "span",
+        props: {
+          style: {
+            fontFamily: "Helvetica",
+            fontSize: 12,
+            fontWeight: 400,
+            color: "rgba(255,255,255,0.30)",
+          },
+          children: "*Valores estimados. Rentabilidade não é garantida.",
+        },
+      },
+    },
+  });
+
+  // ── LOGO SEAZONE ──
+  children.push({
+    type: "img",
+    props: {
+      src: `data:image/png;base64,${logoBase64}`,
+      style: {
+        position: "absolute",
+        left: w / 2 - 65,
+        top: barraY + barraH - 54,
+        width: 130,
+        height: 32,
+        opacity: 0.88,
+      },
+    },
+  });
+
+  // ── Render com Satori ──
+  const element = {
+    type: "div",
+    props: {
+      style: {
+        position: "relative",
+        width: w,
+        height: h,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      },
+      children,
+    },
+  };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const svgStr = await satori(element as any, {
+    width: w,
+    height: h,
+    fonts: [
+      { name: "Helvetica", data: fontBuffer,     weight: 400, style: "normal" },
+      { name: "Helvetica", data: fontBoldBuffer,  weight: 700, style: "normal" },
+    ],
+  });
+
+  const resvg   = new Resvg(svgStr);
+  const pngData = resvg.render();
+  return Buffer.from(pngData.asPng());
 }
 
 // ─── Handler principal ────────────────────────────────────────────────────────
@@ -297,36 +641,37 @@ export async function POST(req: NextRequest) {
         .toBuffer();
     }
 
-    // 4. Baixar fontes Helvetica do Blob e salvar em /tmp para o librsvg
+    // 4. Baixar fontes e logo do Blob em paralelo
     const fontUrl     = `${BLOB}/identidade/${encodeURIComponent("Helvetica.ttf")}`;
     const fontBoldUrl = `${BLOB}/identidade/${encodeURIComponent("Helvetica-Bold.ttf")}`;
-    const [fontRes, fontBoldRes] = await Promise.all([fetch(fontUrl), fetch(fontBoldUrl)]);
-    fs.writeFileSync(
-      path.join("/tmp", "Helvetica.ttf"),
-      Buffer.from(await fontRes.arrayBuffer())
-    );
-    fs.writeFileSync(
-      path.join("/tmp", "Helvetica-Bold.ttf"),
-      Buffer.from(await fontBoldRes.arrayBuffer())
+    const [fontRes, fontBoldRes, logoRes] = await Promise.all([
+      fetch(fontUrl),
+      fetch(fontBoldUrl),
+      fetch(ASSETS.logoSeazone),
+    ]);
+    const fontBuffer     = await fontRes.arrayBuffer();
+    const fontBoldBuffer = await fontBoldRes.arrayBuffer();
+    const logoBase64     = Buffer.from(await logoRes.arrayBuffer()).toString("base64");
+
+    // 5. Gerar overlay PNG via Satori + Resvg
+    const overlayBuffer = await buildOverlayPNG(
+      briefing, dim, estrutura, fontBuffer, fontBoldBuffer, logoBase64
     );
 
-    // 5. Construir SVG de overlays e compor imagem final
-    const svgStr    = buildOverlaySVG(briefing, dim, estrutura);
-    const svgBuffer = Buffer.from(svgStr);
-
+    // 6. Compositar overlay sobre o render base
     const final = await sharp(base)
-      .composite([{ input: svgBuffer, top: 0, left: 0 }])
+      .composite([{ input: overlayBuffer, top: 0, left: 0 }])
       .png()
       .toBuffer();
 
-    // 6. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
+    // 7. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
     const slug = briefing.empreendimento
       .toLowerCase()
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "");
     const fileName = `SZI_${slug}_${formato}_V1_E${estrutura}_${Date.now()}.png`;
 
-    // 7. Retornar base64
+    // 8. Retornar base64
     const dataUrl = `data:image/png;base64,${final.toString("base64")}`;
 
     return NextResponse.json({
