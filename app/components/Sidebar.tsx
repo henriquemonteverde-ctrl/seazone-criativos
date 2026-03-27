@@ -77,10 +77,12 @@ export default function Sidebar() {
     >
       {/* Logo */}
       <div className="flex items-center gap-2.5 px-6 py-6" style={{ borderBottom: '1px solid #0a2a6e' }}>
-        <HouseIcon />
-        <span className="text-white font-bold text-xl tracking-tight" style={{ fontFamily: 'var(--font-inter), Helvetica, sans-serif', letterSpacing: '-0.02em' }}>
-          seazone
-        </span>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="https://qrapd3qjiankddu3.public.blob.vercel-storage.com/logos/logo%20seazone%20full%20branca.png"
+          alt="Seazone"
+          className="h-6 object-contain"
+        />
       </div>
 
       {/* Section label */}
