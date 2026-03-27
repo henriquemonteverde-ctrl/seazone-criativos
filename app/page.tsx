@@ -584,7 +584,7 @@ export default function Home() {
           zIndex: 50,
           cursor: "pointer",
           filter: "drop-shadow(-4px 0px 12px rgba(0,0,0,0.5))",
-          transition: escondido ? "right 0.15s cubic-bezier(0.4, 0, 1, 1)" : "right 0.6s cubic-bezier(0, 0, 0.2, 1)",
+          transition: escondido ? "right 0.6s ease-in-out" : "right 0.8s cubic-bezier(0, 0, 0.2, 1)",
           animation: escondido ? "none" : "espiar 4s ease-in-out 1s forwards",
         }}
       />
