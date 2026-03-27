@@ -19,10 +19,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "ANTHROPIC_API_KEY não configurada" },
+        { error: "GEMINI_API_KEY não configurada" },
         { status: 500 }
       );
     }
@@ -53,50 +53,36 @@ Estrutura obrigatória do JSON:
   "feedback": "<string com avaliação detalhada — se aprovado, elogio breve; se reprovado, liste exatamente o que deve ser corrigido>"
 }`;
 
-    const claudeRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: 512,
-        system: systemPrompt,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "image",
-                source: {
-                  type: "base64",
-                  media_type: "image/png",
-                  data: base64Data,
-                },
-              },
-              {
-                type: "text",
-                text: `Avalie este criativo Seazone.
+    const userText = `${systemPrompt}
+
+Avalie este criativo Seazone.
 Empreendimento: ${briefing.empreendimento}
 Fase: ${briefing.fase}
 Arquivo: ${fileName ?? "n/d"}
-Retorne apenas o JSON de avaliação.`,
-              },
-            ],
-          },
-        ],
+Retorne apenas o JSON de avaliação.`;
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const claudeRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { text: userText },
+            { inline_data: { mime_type: "image/png", data: base64Data } },
+          ],
+        }],
       }),
     });
 
     if (!claudeRes.ok) {
       const err = await claudeRes.text();
-      throw new Error(`Erro na API do Claude: ${err}`);
+      throw new Error(`Erro na API do Gemini: ${err}`);
     }
 
     const claudeData = await claudeRes.json();
-    const rawText: string = claudeData.content?.[0]?.text ?? "";
+    const rawText: string = claudeData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 
     // Garante que o JSON está limpo mesmo se o modelo adicionar markdown
     const cleaned = rawText.replace(/```json|```/g, "").trim();

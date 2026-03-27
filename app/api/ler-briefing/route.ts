@@ -116,9 +116,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL não informada" }, { status: 400 });
     }
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-      throw new Error("ANTHROPIC_API_KEY não configurada");
+    if (!process.env.GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY não configurada");
     }
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
     // 1. Fetch do HTML da página
     const pageRes = await fetch(url.startsWith("http") ? url : `https://${url}`, {
@@ -132,17 +134,7 @@ export async function POST(req: NextRequest) {
     const html = await pageRes.text();
 
       // ── ETAPA 1: Extrair dados do empreendimento ────────────────────────────
-      const etapa1Res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 2000,
-          system: `Você é um assistente que extrai dados estruturados de briefings imobiliários. Leia o conteúdo e retorne APENAS JSON válido, sem markdown, sem explicações.
+      const etapa1Prompt = `Você é um assistente que extrai dados estruturados de briefings imobiliários. Leia o conteúdo e retorne APENAS JSON válido, sem markdown, sem explicações.
 
 Retorne exatamente neste formato:
 {
@@ -158,13 +150,17 @@ Retorne exatamente neste formato:
   "publicoAlvo": "",
   "tiposDeCriativos": [],
   "variacoesPorTipo": {}
-}`,
-          messages: [
-            {
-              role: "user",
-              content: `Extraia os dados deste briefing Seazone:\n\n${html.slice(0, 6000)}`,
-            },
-          ],
+}
+
+Extraia os dados deste briefing Seazone:
+
+${html.slice(0, 6000)}`;
+
+      const etapa1Res = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: etapa1Prompt }] }],
         }),
       });
 
@@ -174,23 +170,13 @@ Retorne exatamente neste formato:
       }
 
       const etapa1Data = await etapa1Res.json();
-      const etapa1Text: string = etapa1Data.content?.[0]?.text ?? "";
+      const etapa1Text: string = etapa1Data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
       const dadosEmpreendimento = JSON.parse(etapa1Text.replace(/```json|```/g, "").trim());
       console.log("ETAPA1:", JSON.stringify(dadosEmpreendimento));
 
       // ── ETAPA 2: Gerar plano de criativos ──────────────────────────────────
       console.log("INICIANDO ETAPA2");
-      const etapa2Res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 4000,
-          system: `Você é um estrategista de marketing imobiliário. Com base nos dados estruturados do empreendimento, gere o array de criativos.
+      const etapa2Prompt = `Você é um estrategista de marketing imobiliário. Com base nos dados estruturados do empreendimento, gere o array de criativos.
 
 TIPOS DE CRIATIVOS:
 1. ESTÁTICO - arte estática
@@ -212,13 +198,18 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
   "criativos": [
     { "tipo": "", "variacao": 1, "formato": "", "copy": "", "imagemContexto": "", "render": "", "hipotese": "" }
   ]
-}`,
-          messages: [
-            {
-              role: "user",
-              content: `Dados do empreendimento:\n${JSON.stringify(dadosEmpreendimento, null, 2)}\n\nGere o array de criativos.`,
-            },
-          ],
+}
+
+Dados do empreendimento:
+${JSON.stringify(dadosEmpreendimento, null, 2)}
+
+Gere o array de criativos.`;
+
+      const etapa2Res = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: etapa2Prompt }] }],
         }),
       });
 
@@ -234,7 +225,7 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
         }
 
         const etapa2Data = await etapa2Res.json();
-        const etapa2Text: string = etapa2Data.content?.[0]?.text ?? "";
+        const etapa2Text: string = etapa2Data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
         console.log("ETAPA2 RAW:", etapa2Text);
         const dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
 
