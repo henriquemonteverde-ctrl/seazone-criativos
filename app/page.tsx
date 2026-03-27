@@ -305,10 +305,15 @@ export default function Home() {
         throw new Error((e as { error?: string }).error ?? "Falha ao ler briefing");
       }
       const briefing = await br.json();
+      console.log(JSON.stringify(briefing));
+
+      if (briefing.error) {
+        throw new Error("Erro do Agente 1: " + briefing.error);
+      }
 
       const criativos: CriativoItem[] = briefing.criativos ?? [];
       if (criativos.length === 0) {
-        throw new Error("Briefing não retornou criativos. Configure ANTHROPIC_API_KEY para leitura automática.");
+        throw new Error("Agente 1 não retornou criativos. Resposta: " + JSON.stringify(briefing).slice(0, 200));
       }
 
       setProgressTotal(criativos.length);
