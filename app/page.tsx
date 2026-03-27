@@ -102,13 +102,12 @@ export default function Home() {
       <div className="w-full max-w-xl relative z-10">
         {/* Logo */}
         <div className="mb-12 text-center">
-          <div className="inline-flex items-center gap-2 mb-2">
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-              <path d="M14 3L2 13h4v12h6v-7h4v7h6V13h4L14 3z" fill="#FC6058" />
-            </svg>
-            <span className="text-white text-xl font-bold tracking-[0.15em] uppercase">
-              Seazone
-            </span>
+          <div className="flex justify-center mb-3">
+            <img
+              src="/assets/Logos seazone/logo seazone full branca.png"
+              alt="Seazone"
+              className="h-10 object-contain"
+            />
           </div>
           <p className="text-[#FC6058] text-xs tracking-[0.3em] uppercase font-medium">
             Creative Generator
