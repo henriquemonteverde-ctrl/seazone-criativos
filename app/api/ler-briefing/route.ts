@@ -195,30 +195,42 @@ export async function POST(req: NextRequest) {
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          system: `Você é o Agente 1 do sistema Seazone Creative Generator — Analista de Briefing.
-Analise o HTML de um briefing imobiliário Seazone e retorne APENAS JSON válido, sem markdown, sem explicações.
+          max_tokens: 4000,
+          system: `Você é um estrategista de marketing imobiliário. Analise este briefing e extraia APENAS o que está explicitamente nele.
 
-Contexto Seazone:
-- SZI = Seazone Investimentos = criativos para investidores de SPOT
-- SPOT = empreendimento lançado pela Seazone e vendido para investidores
-- NUNCA usar: imóvel, unidade, propriedade, studio
-- PODE usar: SPOT, empreendimento, cota
-- Criativos = peças para mídia paga
+TIPOS DE CRIATIVOS QUE EXISTEM:
+1. ESTÁTICO - arte estática
+2. NARRADO - vídeo com narração em áudio
+3. APRESENTADOR - vídeo gerado com apresentador via Kling AI
 
-Estrutura obrigatória do JSON:
+REGRA DE FORMATOS (sempre gerar os dois):
+- Cada criativo vira 2 peças: feed (1080x1350) + reels (1080x1920)
+- Exemplo: 5 variações estáticas = 10 peças (5 feed + 5 reels)
+- Se o briefing especificar resolução diferente, use a do briefing
+
+PARA CADA CRIATIVO DO ARRAY, extraia do briefing:
+- tipo: 'estatico' | 'narrado' | 'apresentador'
+- variacao: número da variação (1, 2, 3...)
+- formato: 'feed' | 'reels'
+- copy: texto/copy específico desta peça conforme briefing
+- imagemContexto: qual imagem usar (ex: 'fachada', 'rooftop', 'localização', 'área comum') conforme briefing
+- render: qual render do blob usar baseado no imagemContexto
+- hipotese: qual hipótese de comunicação esta peça testa
+
+REGRAS OBRIGATÓRIAS:
+- Não invente variações que não estejam no briefing
+- Não assuma informações ausentes
+- Se briefing não especificar quantidade, use 1 variação por tipo presente
+- Expanda sempre nos 2 formatos (feed + reels)
+- Copy e contexto de imagem devem vir literalmente do briefing
+
+Retorne APENAS JSON válido, sem markdown, sem explicações:
 {
-  "empreendimento": "nome do SPOT",
-  "vertical": "SZI ou SZS",
-  "localizacao": "bairro, cidade - estado",
-  "fase": "Lançamento ou Pré-lançamento",
-  "roi": "ex: 16,4%",
-  "rendimento_mensal": "ex: ~R$ 5.500/mês",
-  "rendimento_anual": "ex: R$ 66.424/ano",
-  "ticket_medio": "ex: R$ 350.190",
-  "pontos_fortes": ["máximo 8 pontos"],
-  "donts": ["proibições encontradas no briefing"],
-  "publico_alvo": "descrição"
+  "empreendimento": { "nome": "", "localizacao": "", "roi": "", "rendimentoMensal": "", "rendimentoAnual": "", "fase": "", "diferenciais": [], "donts": [] },
+  "nomenclatura": "",
+  "criativos": [
+    { "tipo": "", "variacao": 1, "formato": "", "copy": "", "imagemContexto": "", "render": "", "hipotese": "" }
+  ]
 }`,
           messages: [
             {
