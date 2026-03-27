@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import * as fal from "@fal-ai/client";
+import { fal } from "@fal-ai/client";
 import sharp from "sharp";
 
 import type { Briefing } from "../ler-briefing/route";
@@ -62,7 +62,7 @@ async function upscaleUrl(imageUrl: string): Promise<string> {
   const result = await fal.subscribe("fal-ai/clarity-upscaler", {
     input: {
       image_url:           imageUrl,
-      scale:               2,
+      upscale_factor:      2,
       creativity:          0.35,
       resemblance:         0.9,
       num_inference_steps: 18,
