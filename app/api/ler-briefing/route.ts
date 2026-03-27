@@ -231,8 +231,10 @@ Retorne exatamente neste formato:
       const etapa1Data = await etapa1Res.json();
       const etapa1Text: string = etapa1Data.content?.[0]?.text ?? "";
       const dadosEmpreendimento = JSON.parse(etapa1Text.replace(/```json|```/g, "").trim());
+      console.log("ETAPA1:", JSON.stringify(dadosEmpreendimento));
 
       // ── ETAPA 2: Gerar plano de criativos ──────────────────────────────────
+      console.log("INICIANDO ETAPA2");
       const etapa2Res = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -282,7 +284,14 @@ Retorne APENAS JSON válido, sem markdown, sem explicações:
 
       const etapa2Data = await etapa2Res.json();
       const etapa2Text: string = etapa2Data.content?.[0]?.text ?? "";
-      const dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
+      console.log("ETAPA2 RAW:", etapa2Text);
+      let dadosCriativos;
+      try {
+        dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return NextResponse.json({ error: "Etapa 2 falhou: " + msg, etapa2Raw: etapa2Text });
+      }
 
       // ── Combinar resultados ─────────────────────────────────────────────────
       const dadosExtraidos = { empreendimento: dadosEmpreendimento, ...dadosCriativos };
