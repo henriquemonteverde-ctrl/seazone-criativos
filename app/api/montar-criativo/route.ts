@@ -79,7 +79,9 @@ async function upscaleUrl(imageUrl: string): Promise<string> {
 function buildOverlaySVG(
   briefing: Briefing,
   formato: { w: number; h: number },
-  estrutura: number
+  estrutura: number,
+  fontBase64: string,
+  fontBoldBase64: string
 ): string {
   const { w, h } = formato;
   const { empreendimento, localizacao, roi, rendimento_mensal, rendimento_anual, fase } = briefing;
@@ -108,12 +110,24 @@ function buildOverlaySVG(
 
   return `
 <svg width="${w}" height="${h}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs><style>
+    @font-face {
+      font-family: 'Helvetica';
+      src: url('data:font/ttf;base64,${fontBase64}') format('truetype');
+      font-weight: normal;
+    }
+    @font-face {
+      font-family: 'Helvetica';
+      src: url('data:font/ttf;base64,${fontBoldBase64}') format('truetype');
+      font-weight: bold;
+    }
+  </style></defs>
 
   <!-- ── TAG LANÇAMENTO (topo esquerdo) ── -->
   ${isLancamento ? `
   <rect x="44" y="44" width="${isFeed ? 215 : 240}" height="50" rx="6" fill="${CORAL}"/>
   <text x="${isFeed ? 151 : 164}" y="76"
-    font-family="Arial Black, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="${tagSize}" font-weight="800" fill="${WHITE}"
     text-anchor="middle" letter-spacing="3.5">
     LANÇAMENTO
@@ -132,7 +146,7 @@ function buildOverlaySVG(
     <ellipse cx="-195" cy="12" rx="4" ry="2" fill="${CORAL}" opacity="0.5"/>
     <!-- nome -->
     <text x="-168" y="10"
-      font-family="Arial Black, sans-serif"
+      font-family="Helvetica, Arial, sans-serif"
       font-size="${nomeSize}" font-weight="800" fill="${WHITE}"
       letter-spacing="1.8">
       ${empreendimento.toUpperCase()}
@@ -144,7 +158,7 @@ function buildOverlaySVG(
     <rect x="-190" y="-20" width="380" height="40" rx="8"
       fill="${WHITE}" opacity="0.1"/>
     <text x="0" y="10"
-      font-family="Arial, sans-serif"
+      font-family="Helvetica, Arial, sans-serif"
       font-size="${localSize}" fill="${WHITE}"
       text-anchor="middle" letter-spacing="1.5" opacity="0.88">
       ${localizacao.toUpperCase()}
@@ -160,7 +174,7 @@ function buildOverlaySVG(
 
   <!-- ── ROI PRINCIPAL ── -->
   <text x="${w / 2}" y="${barraY + (isFeed ? 88 : 100)}"
-    font-family="Arial Black, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="${roiSize}" font-weight="900" fill="${WHITE}"
     text-anchor="middle" letter-spacing="-2">
     ${roi} ao ano
@@ -168,7 +182,7 @@ function buildOverlaySVG(
 
   <!-- ── LABEL "RETORNO ESTIMADO" ── -->
   <text x="${w / 2}" y="${barraY + (isFeed ? 120 : 136)}"
-    font-family="Arial Black, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="${labelSize}" font-weight="600" fill="${CORAL}"
     text-anchor="middle" letter-spacing="5">
     RETORNO ESTIMADO
@@ -181,13 +195,13 @@ function buildOverlaySVG(
 
   <!-- ── RENDIMENTO MENSAL (esquerda) ── -->
   <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
-    font-family="Arial Black, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="${valorSize}" font-weight="700" fill="${WHITE}"
     text-anchor="middle">
     ${rendimento_mensal}
   </text>
   <text x="${w / 2 - (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
-    font-family="Arial, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="13" fill="${WHITE}"
     text-anchor="middle" opacity="0.45" letter-spacing="2">
     POR MÊS
@@ -200,13 +214,13 @@ function buildOverlaySVG(
 
   <!-- ── RENDIMENTO ANUAL (direita) ── -->
   <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 186 : 212)}"
-    font-family="Arial Black, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="${valorSize}" font-weight="700" fill="${WHITE}"
     text-anchor="middle">
     ${rendimento_anual}
   </text>
   <text x="${w / 2 + (isFeed ? 185 : 205)}" y="${barraY + (isFeed ? 210 : 240)}"
-    font-family="Arial, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="13" fill="${WHITE}"
     text-anchor="middle" opacity="0.45" letter-spacing="2">
     POR ANO
@@ -214,7 +228,7 @@ function buildOverlaySVG(
 
   <!-- ── DISCLAIMER ── -->
   <text x="${w / 2}" y="${barraY + (isFeed ? 242 : 278)}"
-    font-family="Arial, sans-serif"
+    font-family="Helvetica, Arial, sans-serif"
     font-size="12" fill="${WHITE}"
     text-anchor="middle" opacity="0.3">
     *Valores estimados. Rentabilidade não é garantida.
@@ -283,8 +297,15 @@ export async function POST(req: NextRequest) {
         .toBuffer();
     }
 
-    // 4. Construir SVG de overlays e compor imagem final
-    const svgStr    = buildOverlaySVG(briefing, dim, estrutura);
+    // 4. Carregar fontes Helvetica do Blob para embed no SVG
+    const fontUrl     = `${BLOB}/identidade/${encodeURIComponent("Helvetica.ttf")}`;
+    const fontBoldUrl = `${BLOB}/identidade/${encodeURIComponent("Helvetica-Bold.ttf")}`;
+    const [fontRes, fontBoldRes] = await Promise.all([fetch(fontUrl), fetch(fontBoldUrl)]);
+    const fontBase64     = Buffer.from(await fontRes.arrayBuffer()).toString("base64");
+    const fontBoldBase64 = Buffer.from(await fontBoldRes.arrayBuffer()).toString("base64");
+
+    // 5. Construir SVG de overlays e compor imagem final
+    const svgStr    = buildOverlaySVG(briefing, dim, estrutura, fontBase64, fontBoldBase64);
     const svgBuffer = Buffer.from(svgStr);
 
     const final = await sharp(base)
@@ -292,14 +313,14 @@ export async function POST(req: NextRequest) {
       .png()
       .toBuffer();
 
-    // 5. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
+    // 6. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
     const slug = briefing.empreendimento
       .toLowerCase()
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "");
     const fileName = `SZI_${slug}_${formato}_V1_E${estrutura}_${Date.now()}.png`;
 
-    // 6. Retornar base64
+    // 7. Retornar base64
     const dataUrl = `data:image/png;base64,${final.toString("base64")}`;
 
     return NextResponse.json({
