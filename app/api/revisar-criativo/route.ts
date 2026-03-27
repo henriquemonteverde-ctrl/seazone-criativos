@@ -19,10 +19,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "GEMINI_API_KEY não configurada" },
+        { error: "OPENROUTER_API_KEY não configurada" },
         { status: 500 }
       );
     }
@@ -61,28 +61,26 @@ Fase: ${briefing.fase}
 Arquivo: ${fileName ?? "n/d"}
 Retorne apenas o JSON de avaliação.`;
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    const claudeRes = await fetch(geminiUrl, {
+    const claudeRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + apiKey,
+      },
       body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: userText },
-            { inline_data: { mime_type: "image/png", data: base64Data } },
-          ],
-        }],
+        model: "meta-llama/llama-3.1-8b-instruct:free",
+        messages: [{ role: "user", content: userText }],
+        max_tokens: 8000,
       }),
     });
 
     if (!claudeRes.ok) {
       const err = await claudeRes.text();
-      throw new Error(`Erro na API do Gemini: ${err}`);
+      throw new Error(`Erro na API do OpenRouter: ${err}`);
     }
 
     const claudeData = await claudeRes.json();
-    const rawText: string = claudeData.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+    const rawText: string = claudeData.choices?.[0]?.message?.content ?? "";
 
     // Garante que o JSON está limpo mesmo se o modelo adicionar markdown
     const cleaned = rawText.replace(/```json|```/g, "").trim();

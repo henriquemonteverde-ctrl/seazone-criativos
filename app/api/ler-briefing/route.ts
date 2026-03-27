@@ -116,11 +116,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "URL não informada" }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      throw new Error("GEMINI_API_KEY não configurada");
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new Error("OPENROUTER_API_KEY não configurada");
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`;
+    const openRouterUrl = "https://openrouter.ai/api/v1/chat/completions";
+    const openRouterHeaders = {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + process.env.OPENROUTER_API_KEY,
+    };
 
     // 1. Fetch do HTML da página
     const pageRes = await fetch(url.startsWith("http") ? url : `https://${url}`, {
@@ -156,11 +160,13 @@ Extraia os dados deste briefing Seazone:
 
 ${html.slice(0, 6000)}`;
 
-      const etapa1Res = await fetch(geminiUrl, {
+      const etapa1Res = await fetch(openRouterUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: openRouterHeaders,
         body: JSON.stringify({
-          contents: [{ parts: [{ text: etapa1Prompt }] }],
+          model: "meta-llama/llama-3.1-8b-instruct:free",
+          messages: [{ role: "user", content: etapa1Prompt }],
+          max_tokens: 8000,
         }),
       });
 
@@ -170,7 +176,7 @@ ${html.slice(0, 6000)}`;
       }
 
       const etapa1Data = await etapa1Res.json();
-      const etapa1Text: string = etapa1Data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      const etapa1Text: string = etapa1Data.choices?.[0]?.message?.content ?? "";
       const dadosEmpreendimento = JSON.parse(etapa1Text.replace(/```json|```/g, "").trim());
       console.log("ETAPA1:", JSON.stringify(dadosEmpreendimento));
 
@@ -205,11 +211,13 @@ ${JSON.stringify(dadosEmpreendimento, null, 2)}
 
 Gere o array de criativos.`;
 
-      const etapa2Res = await fetch(geminiUrl, {
+      const etapa2Res = await fetch(openRouterUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: openRouterHeaders,
         body: JSON.stringify({
-          contents: [{ parts: [{ text: etapa2Prompt }] }],
+          model: "meta-llama/llama-3.1-8b-instruct:free",
+          messages: [{ role: "user", content: etapa2Prompt }],
+          max_tokens: 8000,
         }),
       });
 
@@ -225,7 +233,7 @@ Gere o array de criativos.`;
         }
 
         const etapa2Data = await etapa2Res.json();
-        const etapa2Text: string = etapa2Data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        const etapa2Text: string = etapa2Data.choices?.[0]?.message?.content ?? "";
         console.log("ETAPA2 RAW:", etapa2Text);
         const dadosCriativos = JSON.parse(etapa2Text.replace(/```json|```/g, "").trim());
 
