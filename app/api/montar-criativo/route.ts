@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as fal from "@fal-ai/client";
 import sharp from "sharp";
 
 import type { Briefing } from "../ler-briefing/route";
@@ -11,17 +12,29 @@ const WHITE = "#FFFFFF";
 
 // ─── Assets via Vercel Blob ───────────────────────────────────────────────────
 
-const BLOB = "https://qrapd3qjiankddu3.public.blob.vercel-storage.com";
+const BLOB    = "https://qrapd3qjiankddu3.public.blob.vercel-storage.com";
+const RENDERS = "empreendimentos/novo-campeche-ii/renders";
+
+function renderUrl(fileName: string): string {
+  return `${BLOB}/${RENDERS}/${encodeURIComponent(fileName)}`;
+}
+
+// Renders por formato e estrutura
+const RENDER_FEED: Record<number, string> = {
+  1: renderUrl("Cópia de Novo Campeche Spot II_01_V07.png"),
+  2: renderUrl("Cópia de Novo Campeche Spot II_02_V07.png"),
+  3: renderUrl("Cópia de Novo Campeche Spot II_03_V07.png"),
+};
+
+// Render 04 é exclusivo para reels; demais como fallback sequencial
+const RENDER_REELS: Record<number, string> = {
+  1: renderUrl("Cópia de Novo Campeche Spot II_04_V07.png"),
+  2: renderUrl("Cópia de Novo Campeche Spot II_05_Inserção.png"),
+  3: renderUrl("Cópia de Novo Campeche Spot II_07.png"),
+};
 
 const ASSETS = {
   logoSeazone: `${BLOB}/logos/logo%20seazone%20full%20branca.png`,
-  renders: {
-    "NOVO CAMPECHE SPOT II": [
-      `${BLOB}/empreendimentos/novo-campeche-ii/renders/render-1.jpg`,
-      `${BLOB}/empreendimentos/novo-campeche-ii/renders/render-2.jpg`,
-      `${BLOB}/empreendimentos/novo-campeche-ii/renders/render-3.jpg`,
-    ],
-  } as Record<string, string[]>,
 };
 
 // ─── Formatos de saída ────────────────────────────────────────────────────────
@@ -37,6 +50,28 @@ async function fetchBuffer(url: string): Promise<Buffer> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Erro ao buscar asset: ${url}`);
   return Buffer.from(await res.arrayBuffer());
+}
+
+// ─── Upscale via fal-ai/clarity-upscaler ─────────────────────────────────────
+
+async function upscaleUrl(imageUrl: string): Promise<string> {
+  if (!process.env.FAL_KEY) return imageUrl;
+
+  fal.config({ credentials: process.env.FAL_KEY });
+
+  const result = await fal.subscribe("fal-ai/clarity-upscaler", {
+    input: {
+      image_url:           imageUrl,
+      scale:               2,
+      creativity:          0.35,
+      resemblance:         0.9,
+      num_inference_steps: 18,
+    },
+  }) as { data?: { image?: { url?: string } } };
+
+  const upscaledUrl = result?.data?.image?.url;
+  if (!upscaledUrl) throw new Error("Upscaler não retornou URL");
+  return upscaledUrl;
 }
 
 // ─── SVG de overlays ─────────────────────────────────────────────────────────
@@ -212,30 +247,30 @@ export async function POST(req: NextRequest) {
 
     const dim = FORMATOS[formato];
 
-    // 1. Escolher imagem base — render do Blob ou fallback sólido
-    const renders = ASSETS.renders[briefing.empreendimento];
-    let imagemUrl: string | null = null;
+    // 1. Escolher render base conforme formato e estrutura
+    const renderMap = formato === "reels" ? RENDER_REELS : RENDER_FEED;
+    const imagemUrl = renderMap[estrutura] ?? renderMap[1];
 
-    if (renders && renders.length > 0) {
-      const idx = Math.min(estrutura - 1, renders.length - 1);
-      imagemUrl = renders[idx];
+    // 2. Tentar upscale via fal-ai/clarity-upscaler; fallback para URL original
+    let finalImageUrl = imagemUrl;
+    try {
+      finalImageUrl = await upscaleUrl(imagemUrl);
+      console.log(`[agente-2-produtor] upscale OK → ${finalImageUrl}`);
+    } catch (upscaleErr) {
+      console.warn("[agente-2-produtor] upscale falhou, usando render original:", upscaleErr);
+      finalImageUrl = imagemUrl;
     }
 
+    // 3. Baixar imagem upscalada (ou original) e redimensionar
     let base: Buffer;
-
-    if (imagemUrl) {
-      try {
-        const imgBuffer = await fetchBuffer(imagemUrl);
-        base = await sharp(imgBuffer)
-          .resize(dim.w, dim.h, { fit: "cover", position: "centre" })
-          .toBuffer();
-      } catch {
-        // Render inacessível — usa fundo navy
-        imagemUrl = null;
-      }
-    }
-
-    if (!imagemUrl) {
+    try {
+      const imgBuffer = await fetchBuffer(finalImageUrl);
+      base = await sharp(imgBuffer)
+        .resize(dim.w, dim.h, { fit: "cover", position: "centre" })
+        .toBuffer();
+    } catch {
+      // Render inacessível — usa fundo navy
+      console.warn("[agente-2-produtor] render inacessível, usando fallback navy");
       base = await sharp({
         create: {
           width: dim.w,
@@ -248,30 +283,29 @@ export async function POST(req: NextRequest) {
         .toBuffer();
     }
 
-    // 2. Construir SVG de overlays
-    const svgStr = buildOverlaySVG(briefing, dim, estrutura);
+    // 4. Construir SVG de overlays e compor imagem final
+    const svgStr    = buildOverlaySVG(briefing, dim, estrutura);
     const svgBuffer = Buffer.from(svgStr);
 
-    // 3. Compor imagem final
-    const final = await sharp(base!)
+    const final = await sharp(base)
       .composite([{ input: svgBuffer, top: 0, left: 0 }])
       .png()
       .toBuffer();
 
-    // 4. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
+    // 5. Nome padronizado: SZI_slug_feed_V1_E1_timestamp.png
     const slug = briefing.empreendimento
       .toLowerCase()
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "");
     const fileName = `SZI_${slug}_${formato}_V1_E${estrutura}_${Date.now()}.png`;
 
-    // 5. Retornar base64
+    // 6. Retornar base64
     const dataUrl = `data:image/png;base64,${final.toString("base64")}`;
 
     return NextResponse.json({
       finalImageUrl: dataUrl,
       fileName,
-      imagemBase: imagemUrl ?? "fallback-navy",
+      imagemBase: finalImageUrl,
       estrutura,
       formato,
     });
