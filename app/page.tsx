@@ -280,6 +280,7 @@ export default function Home() {
   const [errorMsg, setErrorMsg]       = useState("");
   const [progressDone, setProgressDone] = useState(0);
   const [progressTotal, setProgressTotal] = useState(0);
+  const [escondido, setEscondido] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isRunning = !["idle", "done", "error"].includes(status);
@@ -562,6 +563,26 @@ export default function Home() {
           </p>
         </div>
       </div>
+
+      <img
+        src="URL_DO_BLOB_AQUI"
+        alt="Henrique"
+        onMouseEnter={() => setEscondido(true)}
+        onMouseLeave={() => setTimeout(() => setEscondido(false), 2000)}
+        style={{
+          position: "fixed",
+          bottom: 0,
+          right: escondido ? -220 : -60,
+          width: 220,
+          zIndex: 50,
+          cursor: "pointer",
+          transition: escondido
+            ? "right 0.15s cubic-bezier(0.4, 0, 1, 1)"
+            : "right 0.4s cubic-bezier(0, 0, 0.2, 1)",
+          animation: escondido ? "none" : "espiar 3s ease-in-out 1s forwards",
+          filter: "drop-shadow(-4px 0px 12px rgba(0,0,0,0.5))",
+        }}
+      />
     </>
   );
 }

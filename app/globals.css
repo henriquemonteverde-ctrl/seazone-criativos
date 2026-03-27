@@ -40,3 +40,10 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: #0055FF;
 }
+
+@keyframes espiar {
+  0%   { right: -220px; }
+  60%  { right: -60px; }
+  80%  { right: -80px; }
+  100% { right: -60px; }
+}
